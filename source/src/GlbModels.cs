@@ -59,6 +59,7 @@ namespace MloCreator
         {
             double[] e = new double[] { m.W, m.D, m.H }; int up = 0, dep = 0; for (int a = 1; a < 3; a++) { if (e[a] > e[up]) up = a; if (e[a] < e[dep]) dep = a; }
             if (up == dep) return null; int wid = 3 - up - dep; if (up == 2 && dep == 1) return null;
+            if (dep == 1 && e[2] >= e[0] * 0.85) return null;          // (already facing the right way and about as tall as wide, like a double door's frame: which side is up is a guess, so it stays as it is)
             // a model whose sides are nearly equal has no clear up
             double lo = Math.Min(e[0], Math.Min(e[1], e[2])), hi = Math.Max(e[0], Math.Max(e[1], e[2])); if (hi < lo * 1.3) return null;
             int[] r = new int[9]; r[wid] = 1; r[3 + dep] = 1; r[6 + up] = 1;

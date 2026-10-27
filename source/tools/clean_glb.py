@@ -3,13 +3,14 @@
 # the original (asset.extras, which Blender drops) are copied into the new file, so the credit still goes into the README of the export. It can also render a picture before and after.
 #
 #   blender --background --python tools\clean_glb.py -- --in door.glb [--out door_clean.glb] [--drop "drum|chain|track"] [--keep "slat|panel"] [--width 2.4] [--height 2.1] [--depth 0.05]
-#                                                       [--rotate-z 90] [--straighten] [--preview-before before.png] [--preview after.png] [--list]
+#                                                       [--rotate-z 90] [--straighten] [--cut-above 2.7] [--preview-before before.png] [--preview after.png] [--list]
 #
 # --preview-only   only render the --preview-before pictures of the file as it is, change nothing
 # --list      only print the objects (name, size) of the file, so you can decide what to drop
 # --drop      objects whose name matches this regular expression (case does not matter) are deleted
 # --keep      only objects whose name matches are kept (everything else is deleted)
 # --width / --height / --depth   the size in metres of what is left (width = x, depth = y, height = z); with only one given, everything is scaled alike
+# --cut-above Z   slice everything above the height Z off (a drum merged into the same mesh as the door), in the file's own units
 # --straighten   turn what is left about the vertical so its long horizontal side lies along x (a door leaf saved swung open becomes a closed door)
 # --rotate-z  turn what is left about the vertical (degrees) before sizing, to bring the door's width onto x
 import bpy, sys, os, re, json, struct, math
@@ -71,6 +72,12 @@ for o in ms: o.select_set(True)
 bpy.context.view_layer.objects.active = ms[0]
 bpy.ops.object.join(); door = bpy.context.active_object; door.name = os.path.splitext(os.path.basename(out))[0]; door.rotation_mode = 'XYZ'; print('JOINED dims', tuple(round(v, 3) for v in door.dimensions))
 if rotz: door.rotation_euler.z = math.radians(rotz); bpy.ops.object.transform_apply(rotation=True)
+cut = opt('--cut-above', None, float)
+if cut is not None:
+    # a part that is merged into the same mesh (a roller drum above a garage door) cannot be picked by name: slice everything above this height off (in the file's own units, before sizing)
+    import bmesh
+    bm = bmesh.new(); bm.from_mesh(door.data); bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, cut), plane_no=(0, 0, 1), clear_outer=True)
+    bm.to_mesh(door.data); bm.free(); door.data.update(); print('CUT above', cut)
 if '--straighten' in argv:
     # a door leaf saved in an open pose: turn it about the vertical so its long horizontal side lies along x (the way a closed door lies in its frame)
     import numpy as np

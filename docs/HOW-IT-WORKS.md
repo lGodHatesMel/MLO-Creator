@@ -76,6 +76,20 @@ The Build tab shows a route of nine stages that open like dropdowns; a card abov
 | Scale figure | A 1.8 m figure to judge heights against |
 | Cutaway | Hide the model above a height to see inside |
 
+## Tintable walls
+
+With *Tintable inside walls* ticked in the export options, the inside walls that still have the project's wall texture are written as a model of their own (`<prefix>_tint.ydr`) in an entity set called `wall_tint`. The model uses the game's `normal_spec_tnt` shader with a 32 colour palette (the colours of the LNS_Housing wall colour menu, in its order), so a housing script picks the colour by number:
+
+```lua
+ActivateInteriorEntitySet(interior, 'wall_tint')
+SetInteriorEntitySetColor(interior, 'wall_tint', 12)   -- 0 to 31
+RefreshInterior(interior)
+```
+
+- The set is **not** switched on by default. While it is off the room has no tintable walls, so the script (LNS_Housing does) has to activate it, and keep it active.
+- Walls painted with another texture, trim, floors and ceilings are not part of it and keep their look.
+- Not tested in game yet: check the entity set and the colours after the first export.
+
 ## Coordinates
 
 There are three frames and the program converts between them:

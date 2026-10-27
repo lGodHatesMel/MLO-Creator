@@ -871,6 +871,7 @@ window.MLO = window.MLO || {};
         if (I.doorModel) root.append(el('div', { class: 'note' }, ndoor + ' door(s) placed with ' + I.doorModel.name + (I.doorModel.include ? ' (model included).' : ' (referenced by name: the game must have this model).')));
         sec(root, 'e.place', 'Where it goes', { open: true }, (b) => { ex.place = el('div', { class: 'kv' }); b.append(ex.place); UI2.updatePlace(); });
         sec(root, 'e.opt', 'Options', { sum: X.outDir ? 'own folder' : 'default folder' }, (b) => {
+            b.append(el('label', { class: 'chk', title: 'The room walls that have the project\'s wall texture become a model of their own that a housing script can colour (entity set "wall_tint", colour 0 to 31, like LNS_Housing).' }, el('input', { type: 'checkbox', checked: X.tintWalls ? true : null, onchange: (e) => { X.tintWalls = e.target.checked; Model.touch(); } }), 'Tintable room walls (entity set wall_tint)'));
             b.append(el('div', { class: 'row' }, el('label', null, 'Output folder'), el('input', { type: 'text', class: 'grow', value: X.outDir || '', placeholder: 'default: the output folder next to the program', onchange: (e) => { X.outDir = e.target.value.trim(); Model.touch(); } })));
             b.append(el('div', { class: 'note' }, 'The cut model is written with its original file name, so the copy in your resource replaces the game\'s one while the resource runs. Only one resource can replace a given file, so all the buildings of the model go into one resource.'));
         });

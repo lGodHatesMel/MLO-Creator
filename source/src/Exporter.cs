@@ -26,12 +26,12 @@ namespace MloCreator
     class LightData { public double X, Y, Z; public int R, G, B; public double Intensity, Falloff, Exponent; }
     class GroupData
     {
-        public string Name; public int Room, Flags; public double Lod;
+        public string Name; public int Room, Flags; public double Lod; public bool Tint;      // Tint: the walls the game can colour (entity set "wall_tint"), see DrawableXml
         public List<MatData> Mats = new List<MatData>(); public List<LightData> Lights = new List<LightData>();
     }
     class PortalData { public int Flags; public double[] C; }
     class DoorData { public string Name; public double X, Y, Z, Heading, ScaleXY = 1, ScaleZ = 1; }      // scale: the door model fitted to its opening
-    class TexData { public string Name; public int Size; public bool Alpha; public int[] Argb; public string Usage = "DIFFUSE"; }
+    class TexData { public string Name; public int Size; public bool Alpha; public int[] Argb; public string Usage = "DIFFUSE"; public bool Raw; }      // Raw: not compressed, one level (a palette: the rows must stay exact)
 
     public static class J
     {
@@ -77,6 +77,18 @@ namespace MloCreator
 
         // ---------- glass textures made here so the pack always has them ----------
         static int Px(int r, int g, int b, int a) { return (a << 24) | (r << 16) | (g << 8) | b; }
+        // The tintable walls: the name of the entity set, and the palette the game picks the colour from by the set's colour number (0 to 31): row n of the picture is colour n. They are the
+        // 32 colours of the LNS_Housing wall colour menu, in its order. Every column of a row is the same colour; the picture is not compressed and has no smaller copies, so a row stays exact.
+        const string TintSet = "wall_tint";
+        static readonly int[] TintColours = new int[] {
+            0xF1F1F1, 0xDFD7CD, 0xE1BE8E, 0xEBAB69, 0x7E9AB1, 0x736DD2, 0x38356E, 0xA85E53, 0xF13B59, 0x8E4D58, 0x96A08A, 0x646F69, 0x473C5B, 0xD5A6DE, 0x6B6A6C, 0x343435,
+            0xC1CDE0, 0x023020, 0x4FEDE5, 0x62C1E5, 0xFF7B7B, 0x000000, 0xFFEE8C, 0xC0C0C0, 0x012D21, 0xE190B7, 0xA2E783, 0x49862E, 0x5E0606, 0x653E21, 0xD5F3C6, 0xAE4BFF };
+        static TexData TintPalette(string name)
+        {
+            TexData t = new TexData(); t.Name = name; t.Size = 32; t.Alpha = false; t.Raw = true; t.Usage = "TINTPALETTE"; t.Argb = new int[32 * 32];
+            for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++) t.Argb[y * 32 + x] = unchecked((int)(0xFF000000u | (uint)TintColours[y]));
+            return t;
+        }
         static TexData Solid(string name, int size, int argb, bool alpha, string usage)
         {
             TexData t = new TexData(); t.Name = name; t.Size = size; t.Alpha = alpha; t.Usage = usage;
@@ -115,7 +127,25 @@ namespace MloCreator
             foreach (MatData m in g.Mats)
             {
                 s.AppendLine("   <Item>");
-                if (m.Glass)
+                if (g.Tint)
+                {
+                    // the shader of the game's tintable walls: the picture is the walls' look, the palette (one row per colour) is picked by the tint of the entity set
+                    s.AppendLine("    <Name>normal_spec_tnt</Name>\n    <FileName>normal_spec_tnt.sps</FileName>\n    <RenderBucket value=\"0\" />\n    <Parameters>");
+                    s.AppendLine("     <Item name=\"DiffuseSampler\" type=\"Texture\">\n      <Name>" + px + "tint_d</Name>\n     </Item>");
+                    s.AppendLine("     <Item name=\"BumpSampler\" type=\"Texture\">\n      <Name>" + px + "tint_n</Name>\n     </Item>");
+                    s.AppendLine("     <Item name=\"SpecSampler\" type=\"Texture\">\n      <Name>" + px + "tint_s</Name>\n     </Item>");
+                    s.AppendLine("     <Item name=\"TintPaletteSampler\" type=\"Texture\">\n      <Name>" + px + "wall_pal</Name>\n     </Item>");
+                    s.AppendLine("     <Item name=\"useTessellation\" type=\"Vector\" x=\"0\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"bumpiness\" type=\"Vector\" x=\"1\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"specMapIntMask\" type=\"Vector\" x=\"1\" y=\"1\" z=\"1\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"specularIntensityMult\" type=\"Vector\" x=\"0.1\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"specularFalloffMult\" type=\"Vector\" x=\"20\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"specularFresnel\" type=\"Vector\" x=\"0.97\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"wetnessMultiplier\" type=\"Vector\" x=\"1\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"globalAnimUV1\" type=\"Vector\" x=\"0\" y=\"1\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"globalAnimUV0\" type=\"Vector\" x=\"1\" y=\"0\" z=\"0\" w=\"0\" />");
+                }
+                else if (m.Glass)
                 {
                     s.AppendLine("    <Name>glass_env</Name>\n    <FileName>glass_env.sps</FileName>\n    <RenderBucket value=\"1\" />\n    <Parameters>");
                     s.AppendLine("     <Item name=\"DiffuseSampler\" type=\"Texture\">\n      <Name>" + px + "glass</Name>\n     </Item>");
@@ -163,12 +193,12 @@ namespace MloCreator
                 s.AppendLine("     <ShaderIndex value=\"" + shaderIndex + "\" />");
                 s.AppendLine("     <BoundingBoxMin x=\"" + F(gmn.X) + "\" y=\"" + F(gmn.Y) + "\" z=\"" + F(gmn.Z) + "\" w=\"" + F(gmn.X) + "\" />");
                 s.AppendLine("     <BoundingBoxMax x=\"" + F(gmx.X) + "\" y=\"" + F(gmx.Y) + "\" z=\"" + F(gmx.Z) + "\" w=\"" + F(gmx.X) + "\" />");
-                s.AppendLine("     <VertexBuffer>\n      <Flags value=\"0\" />\n      <Layout type=\"GTAV1\">\n       <Position />\n       <Normal />\n       <Colour0 />\n       <TexCoord0 />" + (m.Glass ? "\n       <Tangent />" : "") + "\n      </Layout>\n      <Data>");
+                s.AppendLine("     <VertexBuffer>\n      <Flags value=\"0\" />\n      <Layout type=\"GTAV1\">\n       <Position />\n       <Normal />\n       <Colour0 />\n       <TexCoord0 />" + ((m.Glass || g.Tint) ? "\n       <Tangent />" : "") + "\n      </Layout>\n      <Data>");
                 for (int i = 0; i < nv; i++)
                 {
                     double nx = m.Nrm[i * 3], ny = m.Nrm[i * 3 + 1], nz = m.Nrm[i * 3 + 2];
                     string line = "       " + F(m.Pos[i * 3]) + " " + F(m.Pos[i * 3 + 1]) + " " + F(m.Pos[i * 3 + 2]) + "   " + F(nx) + " " + F(ny) + " " + F(nz) + "   255 255 255 255   " + F(m.Uv[i * 2]) + " " + F(m.Uv[i * 2 + 1]);
-                    if (m.Glass)
+                    if (m.Glass || g.Tint)
                     {
                         // tangent = up x normal
                         double tx = -ny, ty = nx, tz = 0; double tl = Math.Sqrt(tx * tx + ty * ty); if (tl < 1e-9) { tx = 1; ty = 0; } else { tx /= tl; ty /= tl; }
@@ -287,7 +317,9 @@ namespace MloCreator
             s.AppendLine("  <Item type=\"CMloArchetypeDef\">\n   <lodDist value=\"300\" />\n   <flags value=\"0\" />\n   <specialAttribute value=\"0\" />");
             s.AppendLine("   " + Vec("bbMin", bmn) + "\n   " + Vec("bbMax", bmx) + "\n   " + Vec("bsCentre", bc) + "\n   <bsRadius value=\"" + F(br) + "\" />\n   <hdTextureDist value=\"100\" />");
             s.AppendLine("   <name>" + mlo + "</name>\n   <textureDictionary />\n   <clipDictionary />\n   <drawableDictionary />\n   <physicsDictionary>" + mlo + "</physicsDictionary>\n   <assetType>ASSET_TYPE_ASSETLESS</assetType>\n   <assetName>" + mlo + "</assetName>\n   <extensions />\n   <mloFlags value=\"0\" />\n   <entities>");
-            foreach (GroupData g in groups) s.Append(EntityXml(P + g.Name, g.Flags, g.Lod));
+            // (the tintable walls are not in the room: they are the entity set, which is only there while the game has it switched on)
+            List<GroupData> ents = new List<GroupData>(); GroupData tint = null; foreach (GroupData g in groups) { if (g.Tint) tint = g; else ents.Add(g); }
+            foreach (GroupData g in ents) s.Append(EntityXml(P + g.Name, g.Flags, g.Lod));
             foreach (DoorData d in doors) s.Append(PropEntityXml(d.Name, d.X, d.Y, d.Z, d.Heading, d.ScaleXY, d.ScaleZ));
             s.AppendLine("   </entities>");
             s.AppendLine("   <rooms itemType=\"CMloRoomDef\">");
@@ -295,8 +327,8 @@ namespace MloCreator
             for (int room = 0; room < 2; room++)
             {
                 List<string> att = new List<string>();
-                for (int i = 0; i < groups.Count; i++) if (groups[i].Room == room) att.Add(i.ToString());
-                if (room == 1) for (int i = 0; i < doors.Count; i++) att.Add((groups.Count + i).ToString());
+                for (int i = 0; i < ents.Count; i++) if (ents[i].Room == room) att.Add(i.ToString());
+                if (room == 1) for (int i = 0; i < doors.Count; i++) att.Add((ents.Count + i).ToString());
                 string name = room == 0 ? "limbo" : mlo;
                 s.AppendLine("    <Item>\n     <name>" + name + "</name>\n     " + rb + "\n     <blend value=\"1\" />\n     <timecycleName>" + timecycle + "</timecycleName>\n     <secondaryTimecycleName />\n     <flags value=\"96\" />\n     <portalCount value=\"" + portals.Count + "\" />\n     <floorId value=\"0\" />\n     <exteriorVisibiltyDepth value=\"-1\" />\n     <attachedObjects>" + string.Join(" ", att.ToArray()) + "</attachedObjects>\n    </Item>");
             }
@@ -307,7 +339,10 @@ namespace MloCreator
                 for (int k = 0; k < 4; k++) s.AppendLine("      <Item>" + F(p.C[k * 3]) + ", " + F(p.C[k * 3 + 1]) + ", " + F(p.C[k * 3 + 2]) + ", 0</Item>");
                 s.AppendLine("     </corners>\n     <attachedObjects />\n    </Item>");
             }
-            s.AppendLine("   </portals>\n   <entitySets itemType=\"CMloEntitySet\" />\n   <timeCycleModifiers itemType=\"CMloTimeCycleModifier\" />\n  </Item>");
+            s.AppendLine("   </portals>");
+            if (tint != null) s.Append("   <entitySets itemType=\"CMloEntitySet\">\n    <Item>\n     <name>" + TintSet + "</name>\n     <locations>1</locations>\n     <entities>\n" + EntityXml(P + tint.Name, tint.Flags, tint.Lod).Replace("\n    ", "\n       ").Insert(0, "   ") + "     </entities>\n    </Item>\n   </entitySets>\n");
+            else s.AppendLine("   <entitySets itemType=\"CMloEntitySet\" />");
+            s.AppendLine("   <timeCycleModifiers itemType=\"CMloTimeCycleModifier\" />\n  </Item>");
             s.AppendLine(" </archetypes>\n <name>" + P + "types</name>\n <dependencies />\n <compositeEntityTypes itemType=\"CCompositeEntityType\" />\n</CMapTypes>");
             return s.ToString();
         }
@@ -332,7 +367,7 @@ namespace MloCreator
             foreach (TexData t in texs)
             {
                 string n = px + t.Name;
-                x.Append(" <Item>\n  <Name>" + n + "</Name>\n  <Unk32 value=\"128\" />\n  <Usage>" + t.Usage + "</Usage>\n  <UsageFlags>UNK24</UsageFlags>\n  <ExtraFlags value=\"0\" />\n  <Width value=\"" + t.Size + "\" />\n  <Height value=\"" + t.Size + "\" />\n  <MipLevels value=\"" + Dds.MipCount(t.Size) + "\" />\n  <Format>" + (t.Alpha ? "D3DFMT_DXT5" : "D3DFMT_DXT1") + "</Format>\n  <FileName>" + n + ".dds</FileName>\n </Item>\n");
+                x.Append(" <Item>\n  <Name>" + n + "</Name>\n  <Unk32 value=\"128\" />\n  <Usage>" + t.Usage + "</Usage>\n  <UsageFlags>UNK24</UsageFlags>\n  <ExtraFlags value=\"0\" />\n  <Width value=\"" + t.Size + "\" />\n  <Height value=\"" + t.Size + "\" />\n  <MipLevels value=\"" + (t.Raw ? 1 : Dds.MipCount(t.Size)) + "\" />\n  <Format>" + (t.Raw ? "D3DFMT_A8R8G8B8" : (t.Alpha ? "D3DFMT_DXT5" : "D3DFMT_DXT1")) + "</Format>\n  <FileName>" + n + ".dds</FileName>\n </Item>\n");
             }
             x.Append("</TextureDictionary>\n");
             return x.ToString();
@@ -369,7 +404,7 @@ namespace MloCreator
                     Dictionary<string, object> gd = J.O(go);
                     GroupData g = new GroupData();
                     g.Name = Safe(J.S(J.G(gd, "name"), "part"), "part", 12);
-                    g.Room = J.I(J.G(gd, "room"), 1); g.Flags = J.I(J.G(gd, "flags"), 1572864); g.Lod = J.D(J.G(gd, "lod"), 300);
+                    g.Room = J.I(J.G(gd, "room"), 1); g.Flags = J.I(J.G(gd, "flags"), 1572864); g.Lod = J.D(J.G(gd, "lod"), 300); g.Tint = J.B(J.G(gd, "tint"), false);
                     foreach (object mo in J.A(J.G(gd, "mats")))
                     {
                         Dictionary<string, object> md = J.O(mo);
@@ -413,10 +448,19 @@ namespace MloCreator
                     texs.Add(Solid("glass_n", 16, Px(128, 128, 255, 255), false, "NORMAL"));
                     texs.Add(Solid("glass_s", 16, Px(255, 255, 255, 255), false, "SPECULAR"));
                 }
+                bool needTint = false; foreach (GroupData g in groups) if (g.Tint) needTint = true;
+                if (needTint)
+                {
+                    texs.Add(Solid("tint_d", 64, Px(255, 255, 255, 255), false, "DIFFUSE"));
+                    texs.Add(Solid("tint_n", 16, Px(128, 128, 255, 255), false, "NORMAL"));
+                    texs.Add(Solid("tint_s", 16, Px(255, 255, 255, 255), false, "SPECULAR"));
+                    texs.Add(TintPalette("wall_pal"));
+                    log.Add("tintable walls: entity set " + TintSet + " (colour 0 to 31, the colours of the LNS_Housing menu)");
+                }
                 HashSet<string> have = new HashSet<string>(); foreach (TexData t in texs) have.Add(t.Name);
                 foreach (GroupData g in groups) foreach (MatData m in g.Mats) if (!m.Glass && !have.Contains(m.Tex)) warns.Add("texture '" + m.Tex + "' was used but not supplied");
                 string ddsDir = Path.Combine(work, "dds"); Directory.CreateDirectory(ddsDir);
-                foreach (TexData t in texs) Dds.Write(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size, t.Alpha);
+                foreach (TexData t in texs) { if (t.Raw) Dds.WriteRaw(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size); else Dds.Write(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size, t.Alpha); }
                 string txdXml = TxdXml(texs, P);
 
                 // ---- collision ----

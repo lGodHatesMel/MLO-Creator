@@ -199,6 +199,7 @@ window.MLO = window.MLO || {};
         }
         root.append(el('div', { class: 'h' }, 'Options'));
         root.append(el('label', { class: 'chk' }, el('input', { type: 'checkbox', checked: X.autoLights ? true : null, onchange: (e) => { X.autoLights = e.target.checked; Model.touch(); } }), 'Automatic ceiling lights in every room'));
+        root.append(el('label', { class: 'chk', title: 'The inside walls that have the project\'s wall texture become a model of their own that a housing script can colour (entity set "wall_tint", colour 0 to 31, like LNS_Housing).' }, el('input', { type: 'checkbox', checked: X.tintWalls ? true : null, onchange: (e) => { X.tintWalls = e.target.checked; Model.touch(); } }), 'Tintable inside walls (entity set wall_tint)'));
         root.append(el('div', { class: 'row' }, el('label', null, 'Output folder'), el('input', { type: 'text', class: 'grow', value: X.outDir || '', placeholder: 'default: the output folder next to the program', onchange: (e) => { X.outDir = e.target.value.trim(); Model.touch(); } })));
         root.append(el('div', { class: 'h' }, 'Game files'));
         root.append(el('div', { class: 'note' }, 'The real house has a solid front door, painted-on window glass, solid collision and occluders that hide the inside. Export copies the game\'s files for this house with those parts cut out; they replace the originals while the resource runs.'));

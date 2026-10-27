@@ -102,6 +102,26 @@ namespace MloCreator
 
         public static int MipCount(int size) { int c = 1; while (size > 4) { size /= 2; c++; } return c; }
 
+        // an uncompressed 32 bit picture (A8R8G8B8), one level: for a palette, where every row has to stay exactly the colour it was given
+        public static void WriteRaw(string path, int[] argb, int size)
+        {
+            using (BinaryWriter w = new BinaryWriter(File.Create(path)))
+            {
+                w.Write(Encoding.ASCII.GetBytes("DDS "));
+                w.Write(124);
+                w.Write(0x0000100F);                       // caps, height, width, pixel format, pitch
+                w.Write(size); w.Write(size);
+                w.Write(size * 4);
+                w.Write(0);
+                w.Write(1);
+                for (int i = 0; i < 11; i++) w.Write(0);
+                w.Write(32); w.Write(0x41); w.Write(0);    // pixel format: RGB + alpha, no four-letter code
+                w.Write(32); w.Write(0x00FF0000); w.Write(0x0000FF00); w.Write(0x000000FF); w.Write(unchecked((int)0xFF000000));
+                w.Write(0x1000); w.Write(0); w.Write(0); w.Write(0); w.Write(0);
+                for (int i = 0; i < argb.Length; i++) w.Write(argb[i]);
+            }
+        }
+
         public static void Write(string path, int[] level0, int size, bool dxt5)
         {
             List<int[]> levels = new List<int[]>(); List<int> sizes = new List<int>();

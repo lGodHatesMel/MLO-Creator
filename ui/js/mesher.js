@@ -394,25 +394,28 @@ window.MLO = window.MLO || {};
         const groups = {
             ext: { name: 'ext', room: 0, flags: 1572864, lod: 500, mats: [], lights: [] },
             int: { name: 'int', room: 1, flags: 1572864, lod: 300, mats: [], lights: [] },
-            glass: { name: 'glass', room: 1, flags: 32, lod: 200, mats: [], lights: [] }
+            glass: { name: 'glass', room: 1, flags: 32, lod: 200, mats: [], lights: [] },
+            // the inside walls that still have the project's wall texture, as a drawable of their own that the game can tint (entity set "wall_tint", colour 0-31)
+            tint: { name: 'tint', room: 1, flags: 1572864, lod: 300, mats: [], lights: [], tint: true }
         };
+        const tintOn = !!(project.export && project.export.tintWalls), wallTex = project.defaults && project.defaults.wallInt;
         const cur = new Map(), usedTex = new Set();
         built.batches.forEach(b => {
-            const g = groups[b.group]; if (!g) return;
-            const key = b.group + '|' + b.tex + '|' + b.glass; let m = cur.get(key);
+            const isTint = tintOn && b.kind === 'wall' && b.group === 'int' && !b.glass && b.tex === wallTex, gname = isTint ? 'tint' : b.group, g = groups[gname]; if (!g) return;
+            const key = gname + '|' + b.tex + '|' + b.glass; let m = cur.get(key);
             const nv = b.pos.length / 3;
-            if (!m || m.pos.length / 3 + nv > MAXV) { m = { tex: b.tex, glass: b.glass, pos: [], nrm: [], uv: [], idx: [] }; cur.set(key, m); g.mats.push(m); }
+            if (!m || m.pos.length / 3 + nv > MAXV) { m = { tex: isTint ? 'tint_d' : b.tex, glass: b.glass, pos: [], nrm: [], uv: [], idx: [] }; cur.set(key, m); g.mats.push(m); }
             const off = m.pos.length / 3;
             for (let i = 0; i < b.pos.length; i++) m.pos.push(b.pos[i]);
             for (let i = 0; i < b.nrm.length; i++) m.nrm.push(b.nrm[i]);
             for (let i = 0; i < b.uv.length; i++) m.uv.push(b.uv[i]);
             for (let i = 0; i < b.idx.length; i++) m.idx.push(b.idx[i] + off);
-            if (!b.glass) usedTex.add(b.tex);
+            if (!b.glass && !isTint) usedTex.add(b.tex);
         });
         const L = extra.light || {};
         groups.int.lights = built.lights.slice(0, 48).map(l => ({ x: l.x, y: l.y, z: l.z, r: 255, g: 238, b: 210, intensity: L.intensity || 4, falloff: L.falloff || 6, exponent: L.exponent || 24 }));
         const outGroups = Object.keys(groups).map(k => groups[k]).filter(g => g.mats.length > 0).map(g => ({
-            name: g.name, room: g.room, flags: g.flags, lod: g.lod, lights: g.lights,
+            name: g.name, room: g.room, flags: g.flags, lod: g.lod, lights: g.lights, tint: !!g.tint,
             mats: g.mats.map(m => ({ tex: m.tex, glass: m.glass, pos: M.toB64(new Float32Array(m.pos)), nrm: M.toB64(new Float32Array(m.nrm)), uv: M.toB64(new Float32Array(m.uv)), idx: M.toB64(new Int32Array(m.idx)) }))
         }));
         // collision: 8 vertices per box

@@ -86,9 +86,9 @@ SetInteriorEntitySetColor(interior, 'wall_tint', 12)   -- 0 to 31
 RefreshInterior(interior)
 ```
 
-- The set is **not** switched on by default. While it is off the room has no tintable walls, so the script (LNS_Housing does) has to activate it, and keep it active.
+- The set is switched on by default (`defaultEntitySets` of the interior's `.ymap`), with colour 0. A script that switches it off when you leave (LNS_Housing does on cleanup) leaves the room without those walls, so it has to activate it again.
 - Walls painted with another texture, trim, floors and ceilings are not part of it and keep their look.
-- Not tested in game yet: check the entity set and the colours after the first export.
+- The files were checked by reading them back with CodeWalker (entity set, default set, shader, palette: the palette is the same 64x32 picture as the one in `map_wiwang_hotel`). Not tested in game yet.
 
 ## Coordinates
 

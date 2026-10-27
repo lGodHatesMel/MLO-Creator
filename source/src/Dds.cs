@@ -103,15 +103,15 @@ namespace MloCreator
         public static int MipCount(int size) { int c = 1; while (size > 4) { size /= 2; c++; } return c; }
 
         // an uncompressed 32 bit picture (A8R8G8B8), one level: for a palette, where every row has to stay exactly the colour it was given
-        public static void WriteRaw(string path, int[] argb, int size)
+        public static void WriteRaw(string path, int[] argb, int width, int height)
         {
             using (BinaryWriter w = new BinaryWriter(File.Create(path)))
             {
                 w.Write(Encoding.ASCII.GetBytes("DDS "));
                 w.Write(124);
                 w.Write(0x0000100F);                       // caps, height, width, pixel format, pitch
-                w.Write(size); w.Write(size);
-                w.Write(size * 4);
+                w.Write(height); w.Write(width);
+                w.Write(width * 4);
                 w.Write(0);
                 w.Write(1);
                 for (int i = 0; i < 11; i++) w.Write(0);

@@ -31,7 +31,7 @@ namespace MloCreator
     }
     class PortalData { public int Flags; public double[] C; }
     class DoorData { public string Name; public double X, Y, Z, Heading, ScaleXY = 1, ScaleZ = 1; }      // scale: the door model fitted to its opening
-    class TexData { public string Name; public int Size; public bool Alpha; public int[] Argb; public string Usage = "DIFFUSE"; public bool Raw; }      // Raw: not compressed, one level (a palette: the rows must stay exact)
+    class TexData { public string Name; public int Size; public bool Alpha; public int[] Argb; public string Usage = "DIFFUSE"; public bool Raw; public int Height; public string Flags = "UNK24"; }      // Raw: not compressed, one level (a palette: the rows must stay exact); Height 0 = square
 
     public static class J
     {
@@ -85,8 +85,8 @@ namespace MloCreator
             0xC1CDE0, 0x023020, 0x4FEDE5, 0x62C1E5, 0xFF7B7B, 0x000000, 0xFFEE8C, 0xC0C0C0, 0x012D21, 0xE190B7, 0xA2E783, 0x49862E, 0x5E0606, 0x653E21, 0xD5F3C6, 0xAE4BFF };
         static TexData TintPalette(string name)
         {
-            TexData t = new TexData(); t.Name = name; t.Size = 32; t.Alpha = false; t.Raw = true; t.Usage = "TINTPALETTE"; t.Argb = new int[32 * 32];
-            for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++) t.Argb[y * 32 + x] = unchecked((int)(0xFF000000u | (uint)TintColours[y]));
+            TexData t = new TexData(); t.Name = name; t.Size = 64; t.Height = 32; t.Alpha = false; t.Raw = true; t.Usage = "TINTPALETTE"; t.Flags = "X64, UNK24"; t.Argb = new int[64 * 32];
+            for (int y = 0; y < 32; y++) for (int x = 0; x < 64; x++) t.Argb[y * 64 + x] = unchecked((int)(0xFF000000u | (uint)TintColours[y]));
             return t;
         }
         static TexData Solid(string name, int size, int argb, bool alpha, string usage)
@@ -135,6 +135,8 @@ namespace MloCreator
                     s.AppendLine("     <Item name=\"BumpSampler\" type=\"Texture\">\n      <Name>" + px + "tint_n</Name>\n     </Item>");
                     s.AppendLine("     <Item name=\"SpecSampler\" type=\"Texture\">\n      <Name>" + px + "tint_s</Name>\n     </Item>");
                     s.AppendLine("     <Item name=\"TintPaletteSampler\" type=\"Texture\">\n      <Name>" + px + "wall_pal</Name>\n     </Item>");
+                    s.AppendLine("     <Item name=\"HardAlphaBlend\" type=\"Vector\" x=\"1\" y=\"0\" z=\"0\" w=\"0\" />");
+                    s.AppendLine("     <Item name=\"tintPaletteSelector\" type=\"Vector\" x=\"0\" y=\"0\" z=\"0\" w=\"0\" />");
                     s.AppendLine("     <Item name=\"useTessellation\" type=\"Vector\" x=\"0\" y=\"0\" z=\"0\" w=\"0\" />");
                     s.AppendLine("     <Item name=\"bumpiness\" type=\"Vector\" x=\"1\" y=\"0\" z=\"0\" w=\"0\" />");
                     s.AppendLine("     <Item name=\"specMapIntMask\" type=\"Vector\" x=\"1\" y=\"1\" z=\"1\" w=\"0\" />");
@@ -198,6 +200,7 @@ namespace MloCreator
                 {
                     double nx = m.Nrm[i * 3], ny = m.Nrm[i * 3 + 1], nz = m.Nrm[i * 3 + 2];
                     string line = "       " + F(m.Pos[i * 3]) + " " + F(m.Pos[i * 3 + 1]) + " " + F(m.Pos[i * 3 + 2]) + "   " + F(nx) + " " + F(ny) + " " + F(nz) + "   255 255 255 255   " + F(m.Uv[i * 2]) + " " + F(m.Uv[i * 2 + 1]);
+                    if (g.Tint) line = line.Replace("   255 255 255 255   ", "   0 129 0 255   ");          // (the vertex colour of the game's own tint walls)
                     if (m.Glass || g.Tint)
                     {
                         // tangent = up x normal
@@ -347,12 +350,12 @@ namespace MloCreator
             return s.ToString();
         }
 
-        static string YmapXml(string mapName, string mlo, double px, double py, double pz, double qz, double qw, V3 emn, V3 emx)
+        static string YmapXml(string mapName, string mlo, double px, double py, double pz, double qz, double qw, V3 emn, V3 emx, bool tint)
         {
             string sext = "<streamingExtentsMin x=\"" + F(emn.X - 300) + "\" y=\"" + F(emn.Y - 300) + "\" z=\"" + F(emn.Z - 300) + "\" />\n <streamingExtentsMax x=\"" + F(emx.X + 300) + "\" y=\"" + F(emx.Y + 300) + "\" z=\"" + F(emx.Z + 300) + "\" />";
             string ext = "<entitiesExtentsMin x=\"" + F(emn.X) + "\" y=\"" + F(emn.Y) + "\" z=\"" + F(emn.Z) + "\" />\n <entitiesExtentsMax x=\"" + F(emx.X) + "\" y=\"" + F(emx.Y) + "\" z=\"" + F(emx.Z) + "\" />";
             return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CMapData>\n <name>" + mapName + "</name>\n <parent />\n <flags value=\"1\" />\n <contentFlags value=\"9\" />\n " + sext + "\n " + ext +
-                "\n <entities>\n  <Item type=\"CMloInstanceDef\">\n   <archetypeName>" + mlo + "</archetypeName>\n   <flags value=\"32\" />\n   <guid value=\"0\" />\n   <position x=\"" + F(px) + "\" y=\"" + F(py) + "\" z=\"" + F(pz) + "\" />\n   <rotation x=\"0\" y=\"0\" z=\"" + F(qz) + "\" w=\"" + F(qw) + "\" />\n   <scaleXY value=\"1\" />\n   <scaleZ value=\"1\" />\n   <parentIndex value=\"-1\" />\n   <lodDist value=\"300\" />\n   <childLodDist value=\"0\" />\n   <lodLevel>LODTYPES_DEPTH_ORPHANHD</lodLevel>\n   <numChildren value=\"0\" />\n   <priorityLevel>PRI_REQUIRED</priorityLevel>\n   <extensions />\n   <ambientOcclusionMultiplier value=\"255\" />\n   <artificialAmbientOcclusion value=\"255\" />\n   <tintValue value=\"0\" />\n   <groupId value=\"0\" />\n   <floorId value=\"0\" />\n   <defaultEntitySets />\n   <numExitPortals value=\"0\" />\n   <MLOInstflags value=\"0\" />\n  </Item>\n </entities>\n" +
+                "\n <entities>\n  <Item type=\"CMloInstanceDef\">\n   <archetypeName>" + mlo + "</archetypeName>\n   <flags value=\"32\" />\n   <guid value=\"0\" />\n   <position x=\"" + F(px) + "\" y=\"" + F(py) + "\" z=\"" + F(pz) + "\" />\n   <rotation x=\"0\" y=\"0\" z=\"" + F(qz) + "\" w=\"" + F(qw) + "\" />\n   <scaleXY value=\"1\" />\n   <scaleZ value=\"1\" />\n   <parentIndex value=\"-1\" />\n   <lodDist value=\"300\" />\n   <childLodDist value=\"0\" />\n   <lodLevel>LODTYPES_DEPTH_ORPHANHD</lodLevel>\n   <numChildren value=\"0\" />\n   <priorityLevel>PRI_REQUIRED</priorityLevel>\n   <extensions />\n   <ambientOcclusionMultiplier value=\"255\" />\n   <artificialAmbientOcclusion value=\"255\" />\n   <tintValue value=\"0\" />\n   <groupId value=\"0\" />\n   <floorId value=\"0\" />\n   " + (tint ? "<defaultEntitySets>\n    <Item>" + TintSet + "</Item>\n   </defaultEntitySets>" : "<defaultEntitySets />") + "\n   <numExitPortals value=\"0\" />\n   <MLOInstflags value=\"0\" />\n  </Item>\n </entities>\n" +
                 " <containerLods itemType=\"rage__fwContainerLodDef\" />\n <boxOccluders itemType=\"BoxOccluder\" />\n <occludeModels itemType=\"OccludeModel\" />\n <physicsDictionaries />\n <instancedData>\n  <ImapLink />\n  <PropInstanceList itemType=\"rage__fwPropInstanceListDef\" />\n  <GrassInstanceList itemType=\"rage__fwGrassInstanceListDef\" />\n </instancedData>\n <timeCycleModifiers itemType=\"CTimeCycleModifier\" />\n <carGenerators itemType=\"CCarGen\" />\n <LODLightsSOA>\n  <direction itemType=\"FloatXYZ\" />\n  <falloff />\n  <falloffExponent />\n  <timeAndStateFlags />\n  <hash />\n  <coneInnerAngle />\n  <coneOuterAngleOrCapExt />\n  <coronaIntensity />\n </LODLightsSOA>\n <DistantLODLightsSOA>\n  <position itemType=\"FloatXYZ\" />\n  <RGBI />\n  <numStreetLights value=\"0\" />\n  <category value=\"0\" />\n </DistantLODLightsSOA>\n <block>\n  <version value=\"0\" />\n  <flags value=\"0\" />\n  <name>" + mapName + "</name>\n  <exportedBy>MLO Creator</exportedBy>\n  <owner></owner>\n  <time>" + DateTime.Now.ToString("d MMMM yyyy HH:mm", CultureInfo.InvariantCulture) + "</time>\n </block>\n</CMapData>\n";
         }
 
@@ -367,7 +370,7 @@ namespace MloCreator
             foreach (TexData t in texs)
             {
                 string n = px + t.Name;
-                x.Append(" <Item>\n  <Name>" + n + "</Name>\n  <Unk32 value=\"128\" />\n  <Usage>" + t.Usage + "</Usage>\n  <UsageFlags>UNK24</UsageFlags>\n  <ExtraFlags value=\"0\" />\n  <Width value=\"" + t.Size + "\" />\n  <Height value=\"" + t.Size + "\" />\n  <MipLevels value=\"" + (t.Raw ? 1 : Dds.MipCount(t.Size)) + "\" />\n  <Format>" + (t.Raw ? "D3DFMT_A8R8G8B8" : (t.Alpha ? "D3DFMT_DXT5" : "D3DFMT_DXT1")) + "</Format>\n  <FileName>" + n + ".dds</FileName>\n </Item>\n");
+                x.Append(" <Item>\n  <Name>" + n + "</Name>\n  <Unk32 value=\"128\" />\n  <Usage>" + t.Usage + "</Usage>\n  <UsageFlags>" + t.Flags + "</UsageFlags>\n  <ExtraFlags value=\"0\" />\n  <Width value=\"" + t.Size + "\" />\n  <Height value=\"" + (t.Height > 0 ? t.Height : t.Size) + "\" />\n  <MipLevels value=\"" + (t.Raw ? 1 : Dds.MipCount(t.Size)) + "\" />\n  <Format>" + (t.Raw ? "D3DFMT_A8R8G8B8" : (t.Alpha ? "D3DFMT_DXT5" : "D3DFMT_DXT1")) + "</Format>\n  <FileName>" + n + ".dds</FileName>\n </Item>\n");
             }
             x.Append("</TextureDictionary>\n");
             return x.ToString();
@@ -460,7 +463,7 @@ namespace MloCreator
                 HashSet<string> have = new HashSet<string>(); foreach (TexData t in texs) have.Add(t.Name);
                 foreach (GroupData g in groups) foreach (MatData m in g.Mats) if (!m.Glass && !have.Contains(m.Tex)) warns.Add("texture '" + m.Tex + "' was used but not supplied");
                 string ddsDir = Path.Combine(work, "dds"); Directory.CreateDirectory(ddsDir);
-                foreach (TexData t in texs) { if (t.Raw) Dds.WriteRaw(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size); else Dds.Write(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size, t.Alpha); }
+                foreach (TexData t in texs) { if (t.Raw) Dds.WriteRaw(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size, t.Height > 0 ? t.Height : t.Size); else Dds.Write(Path.Combine(ddsDir, P + t.Name + ".dds"), t.Argb, t.Size, t.Alpha); }
                 string txdXml = TxdXml(texs, P);
 
                 // ---- collision ----
@@ -574,7 +577,7 @@ namespace MloCreator
                 total += Save(Path.Combine(stream, P + "types.ytyp"), XmlMeta.GetRSCData(ytypDoc), files);
                 log.Add("portals: " + portals.Count);
 
-                XmlDocument ymapDoc = new XmlDocument(); ymapDoc.LoadXml(YmapXml(P + "milo_", mlo, px, py, pz, qz, qw, emn, emx));
+                XmlDocument ymapDoc = new XmlDocument(); ymapDoc.LoadXml(YmapXml(P + "milo_", mlo, px, py, pz, qz, qw, emn, emx, needTint));
                 total += Save(Path.Combine(stream, P + "milo_.ymap"), XmlMeta.GetRSCData(ymapDoc), files);
 
                 XmlDocument mfDoc = new XmlDocument(); mfDoc.LoadXml(ManifestXml(P, mlo));

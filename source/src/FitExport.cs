@@ -13,19 +13,25 @@ namespace MloCreator
     public static partial class Exporter
     {
         class FitItem { public string File, Model, Kind, Hinge, Id; public double Cx, Cy, Zb, Yaw, W, D, H; public int[] Rot; public bool Mirror; }          // (Mirror: the model turned inside out left to right: the second leaf of a double door)
-        class FitDoor { public GroupData G; public DoorData D; public string Name; public V3 Mn, Mx; public double W, D2, H, CenterU, CoreOff, Yaw; public int Mat = 70; public string Hinge; }
+        class FitDoor { public GroupData G; public DoorData D; public string Name, Kind = "door"; public V3 Mn, Mx; public double W, D2, H, CenterU, CenterZ, CoreOff, Yaw; public int Mat = 70; public string Hinge; }
         class FitResult { public List<FitDoor> Doors = new List<FitDoor>(); public List<string> Credits = new List<string>(); public int Windows; }
 
         static string FitProject(string p) { return Regex.Replace(p ?? "", @"[^A-Za-z0-9 _\-]", "").Trim(); }
 
         // one bakes geometry: positions, normals, uvs and indices of a model placed as given (the origin shift is for doors: their origin is the hinge)
         class BakedGeom { public int Mat; public float[] Pos, Nrm, Uv; public int[] Idx; }
+        // The kinds of door prop and where the entity's origin is, as in the game's own doors (read from the game's archetypes): a swinging door (special attribute 7) has its origin at the hinge, mid height;
+        // a garage door (5, prop_gar_door_01...) at the middle of its width and height; a sliding door (8, prop_gar_door_05_l / _r) at the bottom of the edge it slides from. A garage or sliding door moves along
+        // its own axes, so it is made in its own frame (facing +y, width along x) and the entity is turned by the yaw, where a swinging door has the yaw in its vertices.
+        static bool IsDoorKind(string k) { return k == "door" || k == "garage" || k == "slide"; }
+        static bool OwnFrame(string k) { return k == "garage" || k == "slide"; }
         static List<BakedGeom> FitBakeGeoms(GlbModel gm, FitItem it, bool door)
         {
             double sw = it.W / Math.Max(gm.W, 1e-6), sd = it.D / Math.Max(gm.D, 1e-6), sh = it.H / Math.Max(gm.H, 1e-6);
-            double uc = (gm.Min[0] + gm.Max[0]) / 2, nc = (gm.Min[1] + gm.Max[1]) / 2, z0 = gm.Min[2], cs = Math.Cos(it.Yaw), sn = Math.Sin(it.Yaw);
+            bool own = door && OwnFrame(it.Kind), edgeU = door && it.Kind != "garage", midZ = door && it.Kind != "slide";
+            double uc = (gm.Min[0] + gm.Max[0]) / 2, nc = (gm.Min[1] + gm.Max[1]) / 2, z0 = gm.Min[2], cs = own ? 1 : Math.Cos(it.Yaw), sn = own ? 0 : Math.Sin(it.Yaw);
             // the hinge of a door is on the left or the right as seen from the front (the front looks towards +n, so the viewer's left is +u)
-            double hingeU = door ? (it.Hinge == "r" ? -it.W / 2 : it.W / 2) : 0;
+            double hingeU = edgeU ? (it.Hinge == "r" ? -it.W / 2 : it.W / 2) : 0;
             double ox = door ? 0 : it.Cx, oy = door ? 0 : it.Cy, oz = door ? 0 : it.Zb;
             List<BakedGeom> outp = new List<BakedGeom>();
             foreach (GlbGeom g in gm.Geoms)
@@ -35,7 +41,7 @@ namespace MloCreator
                 if (it.Mirror) { int[] fl = new int[g.Idx.Length]; for (int t = 0; t + 2 < fl.Length; t += 3) { fl[t] = g.Idx[t]; fl[t + 1] = g.Idx[t + 2]; fl[t + 2] = g.Idx[t + 1]; } b.Idx = fl; }          // (a mirror turns the faces inside out: the corners go round the other way)
                 for (int i = 0; i < nv; i++)
                 {
-                    double lu = (g.Pos[i * 3] - uc) * sw * mir - hingeU, ln = (g.Pos[i * 3 + 1] - nc) * sd, lz = (g.Pos[i * 3 + 2] - z0) * sh - (door ? it.H / 2 : 0);          // (the origin of a door is its hinge at mid height, like the game door)
+                    double lu = (g.Pos[i * 3] - uc) * sw * mir - hingeU, ln = (g.Pos[i * 3 + 1] - nc) * sd, lz = (g.Pos[i * 3 + 2] - z0) * sh - (midZ ? it.H / 2 : 0);          // (the origin of a door is its hinge at mid height, like the game door)
                     b.Pos[i * 3] = (float)(ox + lu * cs - ln * sn); b.Pos[i * 3 + 1] = (float)(oy + lu * sn + ln * cs); b.Pos[i * 3 + 2] = (float)(oz + lz);
                     double nu = g.Nrm[i * 3] / sw * mir, nn = g.Nrm[i * 3 + 1] / sd, nz = g.Nrm[i * 3 + 2] / sh, l = Math.Sqrt(nu * nu + nn * nn + nz * nz); if (l < 1e-9) { nu = 0; nn = 1; nz = 0; l = 1; }
                     nu /= l; nn /= l; nz /= l;
@@ -93,7 +99,7 @@ namespace MloCreator
                 {
                     string path = ImportHost.GlbPath(FitProject(J.S(J.G(fs, "project"), "")), it.File);
                     if (path == null) { warns.Add("The model file " + it.File + " is not in the project files or the program's models folder, so a placed " + it.Kind + " was left out."); files[it.File] = null; continue; }
-                    gf = GlbFile.Load(path); files[it.File] = gf;
+                    gf = GlbFile.Load(path, J.S(J.G(J.O(J.G(fs, "splits")), it.File), "auto")); files[it.File] = gf;
                     string cr = gf.Title + (gf.Author.Length > 0 ? " by " + gf.Author : "") + (gf.License.Length > 0 ? ", " + gf.License : "") + (gf.Source.Length > 0 ? " (" + gf.Source + ")" : "");
                     if (cr.Trim().Length > 0 && !res.Credits.Contains(cr)) res.Credits.Add(cr);
                 }
@@ -101,13 +107,13 @@ namespace MloCreator
                 GlbModel gm = gf.Models.Find(delegate (GlbModel q) { return q.Id == it.Model; });
                 if (gm == null) { warns.Add("The model " + it.Model + " is not in " + it.File + " any more, so a placed " + it.Kind + " was left out."); continue; }
                 if (it.Rot != null && !GlbModel.IsIdent(it.Rot)) gm = gf.OrientedModel(gm, it.Rot);          // the model as it was set up in the editor (stood up, turned round)
-                bool door = it.Kind == "door";
+                bool door = IsDoorKind(it.Kind);
                 List<BakedGeom> baked = FitBakeGeoms(gm, it, door);
                 foreach (BakedGeom b in baked) { GlbMat mt = gf.Mats[Math.Min(b.Mat, gf.Mats.Count - 1)]; FitTexture(gf, mt, texs, have); if (mt.Glass) needGlass = true; }
                 if (door)
                 {
                     // a door is a prop of its own: positions relative to the hinge, which is also where the entity stands
-                    doorN++; FitDoor fd = new FitDoor(); fd.Name = "fd" + doorN; GroupData g = new GroupData(); g.Name = fd.Name; g.Room = 1; g.Flags = 1572864; g.Lod = 100;
+                    doorN++; FitDoor fd = new FitDoor(); fd.Name = "fd" + doorN; fd.Kind = it.Kind; GroupData g = new GroupData(); g.Name = fd.Name; g.Room = 1; g.Flags = 1572864; g.Lod = 100;
                     Dictionary<string, MatData> dm = new Dictionary<string, MatData>();
                     foreach (BakedGeom b in baked)
                     {
@@ -118,13 +124,14 @@ namespace MloCreator
                         float[] nu = new float[md.Uv.Length + b.Uv.Length]; Buffer.BlockCopy(md.Uv, 0, nu, 0, md.Uv.Length * 4); Buffer.BlockCopy(b.Uv, 0, nu, md.Uv.Length * 4, b.Uv.Length * 4); md.Uv = nu;
                         int[] ni = new int[md.Idx.Length + b.Idx.Length]; Buffer.BlockCopy(md.Idx, 0, ni, 0, md.Idx.Length * 4); for (int i = 0; i < b.Idx.Length; i++) ni[md.Idx.Length + i] = b.Idx[i] + baseV; md.Idx = ni;
                     }
-                    double hu = it.Hinge == "r" ? -it.W / 2 : it.W / 2, cs = Math.Cos(it.Yaw), sn = Math.Sin(it.Yaw);
-                    fd.D = new DoorData(); fd.D.Name = P + fd.Name; fd.D.X = it.Cx + hu * cs; fd.D.Y = it.Cy + hu * sn; fd.D.Z = it.Zb + it.H / 2; fd.D.Heading = 0; fd.G = g;
+                    // the entity stands at the origin of the model: the hinge (swing), the middle of the door (garage), the bottom of the edge it slides from (sliding); a garage or sliding door is turned by the entity
+                    bool own = OwnFrame(it.Kind), edge = it.Kind != "garage"; double hu = !edge ? 0 : (it.Hinge == "r" ? -it.W / 2 : it.W / 2), cs = Math.Cos(it.Yaw), sn = Math.Sin(it.Yaw);
+                    fd.D = new DoorData(); fd.D.Name = P + fd.Name; fd.D.X = it.Cx + hu * cs; fd.D.Y = it.Cy + hu * sn; fd.D.Z = it.Zb + (it.Kind == "slide" ? 0 : it.H / 2); fd.D.Heading = own ? it.Yaw * 180.0 / Math.PI : 0; fd.G = g;
                     Bounds(g, out fd.Mn, out fd.Mx);
                     // collision: one box the size of the leaf (see FitDoorBoundsXml); its middle is half a leaf away from the hinge
                     // (the leaf, not the knob: the thickness of the body of the model, and how far its middle is from the middle of the depth)
                     double sdv = it.D / Math.Max(gm.D, 1e-6); fd.D2 = Math.Max(0.04, (gm.CoreN1 - gm.CoreN0) * sdv + 0.01); fd.CoreOff = ((gm.CoreN0 + gm.CoreN1) / 2 - (gm.Min[1] + gm.Max[1]) / 2) * sdv;
-                    fd.W = it.W; fd.H = it.H; fd.Yaw = it.Yaw; fd.CenterU = it.Hinge == "r" ? it.W / 2 : -it.W / 2; fd.Hinge = it.Hinge;
+                    fd.W = it.W; fd.H = it.H; fd.Yaw = own ? 0 : it.Yaw; fd.CenterU = !edge ? 0 : (it.Hinge == "r" ? it.W / 2 : -it.W / 2); fd.CenterZ = it.Kind == "slide" ? it.H / 2 : 0; fd.Hinge = it.Hinge;
                     res.Doors.Add(fd);
                     continue;
                 }
@@ -153,12 +160,12 @@ namespace MloCreator
         // the move to the middle of the leaf; the entity's origin is the hinge at mid height). Volume and inertia are those of the box.
         static string FitDoorBoundsXml(FitDoor fd)
         {
-            double sx = fd.W, sy = Math.Max(0.04, fd.D2), sz = fd.H, cu = fd.CenterU, cs = Math.Cos(fd.Yaw), sn = Math.Sin(fd.Yaw), tx = cu * cs - fd.CoreOff * sn, ty = cu * sn + fd.CoreOff * cs;
+            double sx = fd.W, sy = Math.Max(0.04, fd.D2), sz = fd.H, cu = fd.CenterU, tz = fd.CenterZ, cs = Math.Cos(fd.Yaw), sn = Math.Sin(fd.Yaw), tx = cu * cs - fd.CoreOff * sn, ty = cu * sn + fd.CoreOff * cs;
             double hx = sx / 2, hy = sy / 2, hz = sz / 2, rad = Math.Sqrt(sx * sx + sy * sy + sz * sz) / 2, vol = sx * sy * sz, margin = 0.125 * Math.Min(sx, Math.Min(sy, sz));
             // the box in the entity's frame: its corners turned and moved (for the composite's own box and sphere)
             V3 mn = new V3(1e9, 1e9, 1e9), mx = new V3(-1e9, -1e9, -1e9);
             foreach (double qx in new double[] { -hx, hx }) foreach (double qy in new double[] { -hy, hy }) foreach (double qz in new double[] { -hz, hz })
-                { double px = qx * cs - qy * sn + tx, py = qx * sn + qy * cs + ty; mn = new V3(Math.Min(mn.X, px), Math.Min(mn.Y, py), Math.Min(mn.Z, qz)); mx = new V3(Math.Max(mx.X, px), Math.Max(mx.Y, py), Math.Max(mx.Z, qz)); }
+                { double px = qx * cs - qy * sn + tx, py = qx * sn + qy * cs + ty; mn = new V3(Math.Min(mn.X, px), Math.Min(mn.Y, py), Math.Min(mn.Z, qz + tz)); mx = new V3(Math.Max(mx.X, px), Math.Max(mx.Y, py), Math.Max(mx.Z, qz + tz)); }
             V3 ctr = (mn + mx) * 0.5; double crad = (mx - mn).Len() * 0.5;
             string inertia = "x=\"" + F((sy * sy + sz * sz) / 12) + "\" y=\"" + F((sx * sx + sz * sz) / 12) + "\" z=\"" + F((sx * sx + sy * sy) / 12) + "\"";
             StringBuilder s = new StringBuilder();
@@ -168,18 +175,28 @@ namespace MloCreator
             s.AppendLine("  <Children>\n   <Item type=\"Box\">");
             s.AppendLine("    " + Vec("BoxMin", new V3(-hx, -hy, -hz))); s.AppendLine("    " + Vec("BoxMax", new V3(hx, hy, hz))); s.AppendLine("    " + Vec("BoxCenter", new V3(0, 0, 0))); s.AppendLine("    " + Vec("SphereCenter", new V3(0, 0, 0))); s.AppendLine("    <SphereRadius value=\"" + F(rad) + "\" />");
             s.AppendLine("    <Margin value=\"" + F(margin) + "\" />\n    <Volume value=\"" + F(vol) + "\" />\n    <Inertia " + inertia + " />\n    <MaterialIndex value=\"" + fd.Mat + "\" />\n    <MaterialColourIndex value=\"0\" />\n    <ProceduralID value=\"0\" />\n    <RoomID value=\"0\" />\n    <PedDensity value=\"0\" />\n    <UnkFlags value=\"0\" />\n    <PolyFlags value=\"0\" />\n    <UnkType value=\"1\" />");
-            s.AppendLine("    <CompositeTransform>\n     " + F(cs) + " " + F(sn) + " 0 0\n     " + F(-sn) + " " + F(cs) + " 0 0\n     0 0 1 0\n     " + F(tx) + " " + F(ty) + " 0 1\n    </CompositeTransform>");
+            s.AppendLine("    <CompositeTransform>\n     " + F(cs) + " " + F(sn) + " 0 0\n     " + F(-sn) + " " + F(cs) + " 0 0\n     0 0 1 0\n     " + F(tx) + " " + F(ty) + " " + F(tz) + " 1\n    </CompositeTransform>");
             s.AppendLine("    <CompositeFlags1>MAP_WEAPON, MAP_DYNAMIC, MAP_ANIMAL, MAP_COVER, MAP_VEHICLE</CompositeFlags1>");
             s.AppendLine("    <CompositeFlags2>VEHICLE_NOT_BVH, VEHICLE_BVH, PED, RAGDOLL, ANIMAL, ANIMAL_RAGDOLL, OBJECT, PLANT, PROJECTILE, EXPLOSION, FORKLIFT_FORKS, TEST_WEAPON, TEST_CAMERA, TEST_AI, TEST_SCRIPT, TEST_VEHICLE_WHEEL, GLASS</CompositeFlags2>");
             s.AppendLine("   </Item>\n  </Children>\n </Bounds>");
             return s.ToString();
         }
 
+        // what the README says about a door prop for the door script: where its origin is, its heading, and how it moves
+        static string FitDoorWhere(FitDoor fd, string xyz, string heading)
+        {
+            string wh = F(Math.Round(fd.W, 3)), hh = F(Math.Round(fd.H, 3));
+            if (fd.Kind == "garage") return "origin at " + xyz + " (the middle of the door, half its width and half its height), heading " + heading + ", " + wh + " m wide and " + hh + " m high. A garage door (door type 5, like the game's prop_gar_door_01): in ox_doorlock tick Automatic, the game's door system lifts it, nothing swings";
+            if (fd.Kind == "slide") return "origin at " + xyz + " (the bottom of its " + (fd.Hinge == "r" ? "right" : "left") + " edge as seen from the front), heading " + heading + ", " + wh + " m wide and " + hh + " m high. A sliding door (door type 8, like the game's prop_gar_door_05_l): in ox_doorlock tick Automatic, it slides along its width away from that edge";
+            return "hinge at " + xyz + " (the middle of the door's height), heading " + heading + ", the leaf is " + wh + " m wide and swings about the hinge";
+        }
+
         // The archetype of a door prop: the same flags and special attribute as the game's own door archetype (read from int_lev_des.ytyp: flags 0x24020000 = object type, with the
         // ambient multiplier; special attribute 7, lod distance 30, hd texture distance 15). Without them the game makes a static piece of the building of it, which no door
         // script can find or move. All 453 of the game's doors that have collision also name a physics dictionary (the 8 with none have no collision), so the door names one too: its own name.
-        static string FitDoorArch(string name, string txd, V3 mn, V3 mx)
+        static string FitDoorArch(string name, string txd, V3 mn, V3 mx, string kind)
         {
-            return DrawableArch(name, txd, 30, mn, mx).Replace("<flags value=\"0\" />", "<flags value=\"604110848\" />").Replace("<specialAttribute value=\"0\" />", "<specialAttribute value=\"7\" />").Replace("<hdTextureDist value=\"30\" />", "<hdTextureDist value=\"15\" />").Replace("<physicsDictionary />", "<physicsDictionary>" + name + "</physicsDictionary>");
+            // (the special attribute is the door type the game gives the object: 7 swinging door, 5 garage door, 8 sliding door, as in the game's own prop_gar_door_01 and prop_gar_door_05_l)
+            bool big = kind != "door"; return DrawableArch(name, txd, big ? 60 : 30, mn, mx).Replace("<flags value=\"0\" />", "<flags value=\"604110848\" />").Replace("<specialAttribute value=\"0\" />", "<specialAttribute value=\"" + (kind == "garage" ? 5 : (kind == "slide" ? 8 : 7)) + "\" />").Replace("<hdTextureDist value=\"30\" />", "<hdTextureDist value=\"" + (big ? 30 : 15) + "\" />").Replace("<physicsDictionary />", "<physicsDictionary>" + name + "</physicsDictionary>");
         }    }
 }

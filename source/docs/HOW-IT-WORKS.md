@@ -116,7 +116,11 @@ Click the faces of a door or window of the model (the flat patch lights up) and 
 
 ### Door and window models from `.glb` files
 
-Models you bring (for example from Sketchfab) go into the project like other files. The host reads each mesh with its node transform; a file with several windows is split into one model per window. Animations are not used.
+Models you bring (for example from Sketchfab) go into the project like other files. The host reads each mesh with its node transform. Animations are not used.
+
+- **One model or a pack.** A file is cut into several models when it is a pack: the parts of a window share a name (`x_frame`, `x_sash`), or the parts stand apart from each other (doors laid out in a row). A file whose parts touch each other (a garage door and its slats, a door and its handle) is one model. The Models panel shows a *Parts* switch (*One model* / *Windows*) for files with several parts; it overrides the guess for that file.
+- **Kind of a file:** Windows, Door, Frame, **Garage** or **Sliding**. It is guessed from the name (a file of one model: "garage", "roll-up", "shutter" gives Garage; "sliding", "gate" gives Sliding; "door" gives Door) and can be changed in the panel.
+- **Files that need Blender.** A door saved swung open, a garage door with a drum, a chain and a track, or a frame that is part of the same mesh as the leaf cannot be used as they are, because the whole model moves with the door. `tools\clean_glb.py` cleans a copy: `blender --background --python tools\clean_glb.py -- --in door.glb --list` names the parts, then `--drop` / `--keep` choose them, `--straighten` closes a door leaf that was saved open, `--width` / `--height` set the real size, and the result is joined into one mesh with its origin at the bottom centre and written as `<name>_clean.glb` next to the original (which is not touched). The author and licence of the original go into the new file, so the README of the export still carries the credit. `--preview-before` and `--preview` draw pictures to check by eye.
 
 - **Placing:** choose a model, click a wall. Nothing is cut for you: *Select the wall faces behind it* and *Select the building's collision there* select what you probably want to delete.
 - **Gizmo:** arrows move along width, depth and height; cubes resize; a ring turns in 15 degree steps. Positions snap to 1 cm.
@@ -128,6 +132,8 @@ Models you bring (for example from Sketchfab) go into the project like other fil
 ### How a door is exported
 
 Each door is a prop of its own made like the game's own doors: archetype flags `0x24020000` with special attribute 7, a composite collision bound with one box child, the hinge at mid height as the origin, and a physics dictionary entry of its own name. The README of the export lists each door's model name, hash, hinge position and heading, which is what a door script such as ox_doorlock asks for. The game ignores the scale of an entity, so the size you give a model is baked into its vertices.
+
+**Garage and sliding doors** are props of their own too, with the door type the game gives its own garage and sliding doors (the archetype's special attribute: 7 swinging, 5 garage, 8 sliding, read from `prop_gar_door_01` and `prop_gar_door_05_l`). A garage door has its origin at the middle of the door, a sliding door at the bottom of the edge it slides from (*Slides from* in the panel). Both are made in their own frame and the entity is turned by the placement's heading, because the game moves them along their own axes. `ox_doorlock` has no separate garage or sliding type: tick *Automatic* on the door there and the game's door system lifts or slides the prop (door rate sets the speed). The README gives each door's model, origin, heading and size. *Also block the doorway with solid collision* works for them too, as a closed, solid fallback. Not tested in game yet.
 
 Windows are merged by material into extra parts of the interior; their glass uses the interior's glass shader.
 
@@ -177,6 +183,7 @@ Press Export on the Export tab; the folder goes to `output\<folder>` (or the fol
 - Collision boxes you draw are boxes only and are not checked against anything.
 - The walk check tests the files' collision with a flat capsule on one level, not the game's character controller.
 - Door props are static: wire them to your door script by model and coordinates.
+- A basement (rooms lowered with *Raise / lower rooms* against an imported building) puts the interior's floor below the building's own door: a player walking in through that door falls the lowered height. The README of the export says by how much; put a landing or a stair at the entrance, or move the player to the test spot.
 - Textures that are not in the files you import are shown in plain colours in the editor; the game uses its own.
 - The model's tilt is ignored (only the turn about the vertical is used); the model's scale must be 1.
 

@@ -942,7 +942,7 @@ window.MLO = window.MLO || {};
                 // doors placed with the door model (positions are in the grid's coordinates, which is the interior's own frame)
                 const doors = []; if (dmod) BI.cutters.filter(k => k.leaf).forEach(k => IM.doorTransforms(k).forEach(t => doors.push({ x: t.x, y: t.y, z: t.z, heading: t.yaw * 180 / Math.PI, sxy: t.sxy, sz: t.sz })));        // two leaves for double doors
                 if (doors.length) log(tag + 'Doors placed with ' + dmod.name + ': ' + doors.length);
-                const m = Mesher.toExport(BP, built, { light: {}, model: { resource, prefix: prefixOf(BP, rec), label: many ? b.name : (X.label || BP.name), timecycle: 'hash_E83C53FC', placement: { x: pl.x, y: pl.y, heading: pl.heading, z: pl.z }, entranceNote: 'test spot inside the interior: ' + tp, outDir: X.outDir || undefined,
+                const m = Mesher.toExport(BP, built, { light: {}, model: { resource, prefix: prefixOf(BP, rec), label: many ? b.name : (X.label || BP.name), timecycle: 'hash_E83C53FC', placement: { x: pl.x, y: pl.y, heading: pl.heading, z: pl.z }, entranceNote: 'test spot inside the interior: ' + tp, drop: Math.max(0, -(BI.levelShift || 0)), outDir: X.outDir || undefined,
                     doors, doorModel: doors.length ? { name: dmod.name, include: !!dmod.include, project: BP.name } : undefined, fitted: M.FitModels.exportSpec(BP) } });
                 models.push(m); tps.push({ name: b.name, tp }); occSets.push({ rects: Shell.regionRects(BP.shell), place: { x: pl.x, y: pl.y, heading: pl.heading } });
             }));

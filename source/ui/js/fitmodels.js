@@ -1,6 +1,6 @@
 // Window and door models from .glb files, placed by hand with a gizmo (Models tool, key I).
 // The library: every .glb of the project, split by the host into models (one per window system, or the one door). A placement ("fit") is stored in
-// import.fits = [{ id, f (file), m (model id), kind, cx, cy, zb, yaw, w, d, h, hinge, open }] in the grid's coordinates: (cx, cy) is the middle of the model's
+// import.fits = [{ id, f (file), m (model id), kind (window, door, frame, garage, slide), cx, cy, zb, yaw, w, d, h, hinge, open }] in the grid's coordinates: (cx, cy) is the middle of the model's
 // footprint, zb its bottom, yaw the turn of its width axis u = (cos, sin), n = (-sin, cos) is the way its front faces. w, d, h are the size the user gave it.
 // Nothing is cut from the building: the user deletes the wall faces himself with the Delete faces tool. A placement only opens the interior's own wall (and makes the portal).
 window.MLO = window.MLO || {};
@@ -15,6 +15,7 @@ window.MLO = window.MLO || {};
     const api = () => M.Tools.api;
     const IT = () => M.ImportTools;
     const f2 = (v, d) => (v == null || isNaN(v)) ? '' : (+v).toFixed(d == null ? 2 : d);
+    const isDoor = (k) => k === 'door' || k === 'garage' || k === 'slide';          // a door prop: swinging (door), lifted (garage) or sliding (slide)
     function bytes(s) { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
     const f32 = (s) => new Float32Array(bytes(s).buffer);
     const u16 = (s) => new Uint16Array(bytes(s).buffer);
@@ -29,6 +30,9 @@ window.MLO = window.MLO || {};
     FM.reset = function () { FM.lib = { files: [], byId: new Map(), busy: false, error: '', ver: (FM.lib.ver || 0) + 1, loaded: false }; thumbs = new Map(); bakeCache.clear(); FM.sel = null; FM.chosen = null; drag = null; };
     FM.kindOf = function (file) { const rec = FM.lib.files.find(x => x.file === file); return ((imp().glbKinds || {})[file]) || (rec ? rec.guess : 'window'); };
     FM.setKind = function (file, kind) { Model.edit(P => { P.import.glbKinds = P.import.glbKinds || {}; P.import.glbKinds[file] = kind; }); FM.loadLib(file); };
+    // A file is cut into windows (a pack of windows: one model per window system) or is ONE model (a door made of many parts: a garage door with its slats). Stored per file in import.glbSplit; none = the host
+    // decides by the names of the parts. The ids of the models change with it, so placements made before the change lose their model.
+    FM.setSplit = function (file, mode) { Model.edit(P => { P.import.glbSplit = P.import.glbSplit || {}; if (mode === 'auto') delete P.import.glbSplit[file]; else P.import.glbSplit[file] = mode; }); FM.loadLib(file); };
     FM.model = function (id) { return FM.lib.byId.get(id) || null; };
     FM.models = function () { const out = []; FM.lib.files.forEach(f => f.models.forEach(m => out.push(m))); return out; };
     // `only`: the name of one file to read again (its kind, or the turn of one of its models, changed); the others stay as they are
@@ -36,11 +40,11 @@ window.MLO = window.MLO || {};
         if (S.project.kind !== 'import') return;
         const lib = FM.lib; lib.busy = true; lib.error = '';
         try {
-            const r = await Model.api('import/glb?name=' + safe(), 'POST', { kinds: imp().glbKinds || {}, setups: imp().glbSetup || {}, only: only || '' });
+            const r = await Model.api('import/glb?name=' + safe(), 'POST', { kinds: imp().glbKinds || {}, setups: imp().glbSetup || {}, splits: imp().glbSplit || {}, only: only || '' });
             (r.textures || []).forEach(t => { IM.textures[t.name] = { w: t.w, h: t.h, rgba: bytes(t.rgba) }; });
             const files = only ? lib.files.filter(f => f.file !== only) : [], map = new Map(only ? [...lib.byId].filter(e => e[1].f !== only) : []);
             (r.files || []).forEach(f => {
-                const rec = { file: f.file, builtin: !!f.builtin, guess: f.kind || 'window', title: f.title || '', author: f.author || '', license: f.license || '', source: f.source || '', error: f.error || '', models: [] };
+                const rec = { file: f.file, builtin: !!f.builtin, guess: f.kind || 'window', title: f.title || '', author: f.author || '', license: f.license || '', source: f.source || '', error: f.error || '', units: f.units || 0, splitKeys: f.splitKeys || 0, split: !!f.split, models: [] };
                 const mats = (f.mats || []).map(m => ({ name: m.name, key: m.key, color: m.color || [0.7, 0.7, 0.7, 1], tex: m.tex || '', glass: !!m.glass }));
                 (f.models || []).forEach(m => {
                     const size = [m.max[0] - m.min[0], m.max[1] - m.min[1], m.max[2] - m.min[2]];
@@ -143,7 +147,7 @@ window.MLO = window.MLO || {};
         const list = (project && project.import && project.import.fits) || [];
         // (a door that stands in a frame has no hole of its own: the frame's hole is the wall's cut)
         return list.filter(f => f.open !== false && f.w > 0.1 && f.h > 0.1 && !(f.kind === 'door' && findFrame(f, list))).map(f => {
-            if (f.kind === 'door') { const c = FM.doorCut(f); return { id: 'fit' + f.id, type: 'door', face: true, fit: true, cx: c.cx, cy: c.cy, zb: c.zb, w: c.w, h: c.h, d: 0.8, yaw: f.yaw, dd: 0 }; }
+            if (isDoor(f.kind)) { const c = FM.doorCut(f); return { id: 'fit' + f.id, type: 'door', face: true, fit: true, cx: c.cx, cy: c.cy, zb: c.zb, w: c.w, h: c.h, d: 0.8, yaw: f.yaw, dd: 0 }; }
             // a window or a frame: the hole is 1 cm smaller than the model all round, so its frame overlaps the wall; a frame on the floor is a doorway (no sill piece, no glass)
             const frame = f.kind === 'frame', floor = frame && f.zb <= 0.02, zb = floor ? 0 : r3(f.zb + 0.01);
             return { id: 'fit' + f.id, type: frame && floor ? 'door' : 'window', face: true, fit: true, noglass: frame, cx: f.cx, cy: f.cy, zb, w: r3(f.w - 0.02), h: r3(f.zb + f.h - 0.01 - zb), d: 0.8, yaw: f.yaw, dd: 0 };
@@ -236,7 +240,7 @@ window.MLO = window.MLO || {};
     FM.solidBoxes = function (project) {
         const list = (project && project.import && project.import.fits) || [];
         const out = [];
-        list.filter(f => f.kind === 'door' && f.solid).forEach(f => {
+        list.filter(f => isDoor(f.kind) && f.solid).forEach(f => {
             const m = FM.model(f.m), t = m && m.core ? (m.core[1] - m.core[0]) * f.d / m.size[1] : Math.min(f.d, 0.08);
             if (f.double) { const U = [Math.cos(f.yaw), Math.sin(f.yaw)]; FM.leaves(f).forEach(lf => out.push({ id: 'fs' + f.id + (lf.side > 0 ? 'a' : 'b'), cx: r3(f.cx + U[0] * lf.du), cy: r3(f.cy + U[1] * lf.du), zb: f.zb, h: f.h, hu: lf.w / 2, hn: Math.max(0.03, t / 2 + 0.005), yaw: f.yaw })); }
             else out.push({ id: 'fs' + f.id, cx: f.cx, cy: f.cy, zb: f.zb, h: f.h, hu: f.w / 2, hn: Math.max(0.03, t / 2 + 0.005), yaw: f.yaw });
@@ -251,7 +255,7 @@ window.MLO = window.MLO || {};
             if (f.double && f.kind === 'door') FM.leaves(f).forEach(lf => items.push(Object.assign({}, base, { id: f.id + (lf.side > 0 ? 'a' : 'b'), cx: r3(f.cx + U[0] * lf.du), cy: r3(f.cy + U[1] * lf.du), w: r3(lf.w), hinge: lf.hinge, mirror: lf.mirror })));
             else items.push(Object.assign({}, base, { id: f.id, cx: f.cx, cy: f.cy, w: f.w, hinge: f.hinge || 'l' }));
         });
-        return { project: project.name, items };
+        return { project: project.name, items, splits: (project.import && project.import.glbSplit) || {} };
     };
 
     // ---------- geometry of a placement ----------
@@ -267,7 +271,7 @@ window.MLO = window.MLO || {};
     function pickFit(ray) {
         let best = null; const cm = FM.chosen ? FM.model(FM.chosen) : null, frameChosen = !!cm && FM.kindOf(cm.f) === 'frame';          // (with a frame chosen the doors are not in the way: a frame goes round a door)
         fits().forEach(f => {
-            if (frameChosen && f.kind === 'door') return;
+            if (frameChosen && isDoor(f.kind)) return;
             const t = hitBox(ray, f, 0.02); if (t == null || (best && t >= best.t)) return;
             if (f.kind === 'frame') {
                 const fi = frameInner(f); if (fi) { const hp = add(ray.o, ray.d, t), U = [Math.cos(f.yaw), Math.sin(f.yaw)], du = (hp[0] - f.cx) * U[0] + (hp[1] - f.cy) * U[1] - fi.cu; if (Math.abs(du) < fi.w / 2 - 0.02 && hp[2] > fi.zb + 0.02 && hp[2] < fi.zb + fi.h - 0.02) return; }
@@ -362,7 +366,7 @@ window.MLO = window.MLO || {};
     };
     // where the hinge of a door is (the bottom of its hinge edge)
     // where the hinge of a door is (the bottom of its hinge edge); a double door has two, on its outer edges
-    FM.hinges = function (it) { if (it.kind !== 'door') return []; const { U, c } = axes(it); return FM.leaves(it).map(lf => { const k = lf.du + (lf.hinge === 'r' ? -lf.w / 2 : lf.w / 2); return [c[0] + U[0] * k, c[1] + U[1] * k, it.zb]; }); };
+    FM.hinges = function (it) { if (it.kind !== 'door' && it.kind !== 'slide') return []; const { U, c } = axes(it); return FM.leaves(it).map(lf => { const k = lf.du + (lf.hinge === 'r' ? -lf.w / 2 : lf.w / 2); return [c[0] + U[0] * k, c[1] + U[1] * k, it.zb]; }); };
     FM.hingeOf = function (it) { const h = FM.hinges(it); return h.length ? h[0] : null; };
 
     // ---------- placing ----------
@@ -376,7 +380,7 @@ window.MLO = window.MLO || {};
             // the front looks at the side the viewer is on (a surface of the model or of the room's wall can face either way)
             const eye = M.App.renderer.camera.eye(); if ((eye[0] - s.p[0]) * nx + (eye[1] - s.p[1]) * ny < 0) { nx = -nx; ny = -ny; }
         }
-        const yaw = r3(snapYaw(Math.atan2(-nx, ny))), kind = FM.kindOf(m.f), floorKind = kind === 'door' || kind === 'frame';
+        const yaw = r3(snapYaw(Math.atan2(-nx, ny))), kind = FM.kindOf(m.f), floorKind = isDoor(kind) || kind === 'frame';
         // a model made in some other unit (a frame 99 units high) gets the height of a door; the proportions stay
         const sc = (floorKind && (m.size[2] > 4.5 || m.size[2] < 0.3)) ? 2.2 / m.size[2] : 1, w = r3(m.size[0] * sc), d = r3(Math.max(0.03, m.size[1] * sc)), h = r3(m.size[2] * sc), back = d / 2 + 0.03;
         const cs = Math.cos(yaw), sn = Math.sin(yaw), cx0 = s.p[0] - nx * (nh < 0.5 ? 0 : back), cy0 = s.p[1] - ny * (nh < 0.5 ? 0 : back), al = cx0 * cs + cy0 * sn, alS = Math.round(al / 0.01) * 0.01;
@@ -513,10 +517,11 @@ window.MLO = window.MLO || {};
         root.append(el('div', { class: 'row wrap' }, el('button', { class: 'btn sm primary', onclick: () => M.ImportUI.addFiles('files') }, 'Add .glb models...'), el('span', { class: 'note grow' }, 'or drag a .glb onto the window')));
         if (lib.busy) root.append(el('div', { class: 'note' }, 'Reading the models...'));
         if (lib.error) root.append(el('div', { class: 'note', style: { color: '#f0a4a3' } }, lib.error));
-        if (!lib.files.length && !lib.busy) root.append(el('div', { class: 'note' }, 'No window or door models yet. Add a .glb with a door, or a file with several windows: each window in it becomes a model of its own.'));
+        if (!lib.files.length && !lib.busy) root.append(el('div', { class: 'note' }, 'No window or door models yet. Add a .glb with a door or a garage door, or a file with several windows: each window in it becomes a model of its own.'));
         lib.files.forEach(f => {
             const kind = FM.kindOf(f.file);
-            root.append(el('div', { class: 'row wrap', style: { marginTop: '8px' } }, el('b', { class: 'grow', title: f.file + (f.builtin ? ' (comes with the program)' : ''), style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, f.title || f.file, f.builtin ? el('span', { class: 'note', style: { margin: '0 0 0 6px', fontWeight: 400 } }, 'built in') : null), k.seg([['window', 'Windows'], ['door', 'Door'], ['frame', 'Frame']], kind, v => FM.setKind(f.file, v))));
+            root.append(el('div', { class: 'row wrap', style: { marginTop: '8px' } }, el('b', { class: 'grow', title: f.file + (f.builtin ? ' (comes with the program)' : ''), style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, f.title || f.file, f.builtin ? el('span', { class: 'note', style: { margin: '0 0 0 6px', fontWeight: 400 } }, 'built in') : null), k.seg([['window', 'Windows'], ['door', 'Door'], ['frame', 'Frame'], ['garage', 'Garage'], ['slide', 'Sliding']], kind, v => FM.setKind(f.file, v))));
+            if (!f.error && f.splitKeys > 1) root.append(el('div', { class: 'row wrap' }, el('label', { title: 'This file has ' + f.units + ' parts. Cut into windows by name, or take all of it as one model (a door made of many pieces).' }, 'Parts'), k.seg([['one', 'One model'], ['split', 'Windows (' + f.splitKeys + ')']], f.split ? 'split' : 'one', v => FM.setSplit(f.file, v))));
             if (f.error) { root.append(el('div', { class: 'note', style: { color: '#f0a4a3' } }, f.file + ': ' + f.error)); return; }
             const grid = el('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' } });
             f.models.forEach(m => {
@@ -541,7 +546,7 @@ window.MLO = window.MLO || {};
 
         const it = selFit();
         if (it) {
-            const m = FM.model(it.m), door = it.kind === 'door', keep = S.fitKeep !== false;
+            const m = FM.model(it.m), door = isDoor(it.kind), swing = it.kind === 'door', keep = S.fitKeep !== false;
             root.append(el('div', { class: 'h' }, 'Selected: ' + (m ? m.name : 'missing model')));
             if (!m) root.append(el('div', { class: 'note', style: { color: '#f0a4a3' } }, 'The model ' + it.m + ' is not in the library (is ' + it.f + ' still in the project?). It is left out of the export.'));
             const sz = (key, v) => {
@@ -555,16 +560,18 @@ window.MLO = window.MLO || {};
                 num('Turn', () => f2(it.yaw * 180 / Math.PI, 1), v => FM.set({ yaw: r3(v * Math.PI / 180) }), '1', '°'));
             root.append(el('div', { class: 'row wrap' }, el('button', { class: 'btn sm', title: 'R', onclick: () => FM.turn(Math.PI / 2) }, 'Turn 90°'), el('button', { class: 'btn sm', title: 'Shift+R', onclick: () => FM.turn(Math.PI) }, 'Turn around'),
                 el('button', { class: 'btn sm', title: 'Shift+D', onclick: () => FM.duplicate() }, 'Duplicate'), el('button', { class: 'btn sm danger', onclick: () => FM.remove() }, 'Delete ', el('kbd', null, 'X'))));
-            if (door) {
+            if (swing) {
                 root.append(chk('Double door: two leaves side by side', () => !!it.double, v => FM.setDouble(v)));
                 if (it.double) root.append(el('div', { class: 'note' }, 'The width is the whole doorway: each leaf is half of it, hinged on the outer edges (the orange lines) and meeting in the middle where their knobs are (the right leaf is the model mirrored). Each leaf is a door prop of its own for your door script. Turning this on doubles the width (each leaf keeps the size the door had), turning it off halves it.'));
             }
-            if (door && !it.double) root.append(el('div', { class: 'row' }, el('label', null, 'Hinge'), k.seg([['l', 'Left'], ['r', 'Right']], it.hinge || 'l', v => FM.set({ hinge: v }))), el('div', { class: 'note' }, 'Seen from the front (the green arrow points to the front); the orange line is the hinge, it starts on the side opposite the knob. The door is a prop of its own that swings about the hinge, with a collision box the thickness of the leaf: your door script (ox_doorlock...) moves it. Its opening in the interior wall is centred on the door, with room each side for the leaf to turn, so it does not catch on the wall.'));
+            if (it.kind === 'garage') root.append(el('div', { class: 'note' }, 'A garage door: a prop of its own with its origin at the middle of the door (half its width, half its height) and the game\'s garage door type, so ox_doorlock lifts it as an Automatic door (tick Automatic on the door there). It is not swung. Give the door script the model name, the position and the heading from the README of the export.'));
+            if (it.kind === 'slide') root.append(el('div', { class: 'row' }, el('label', null, 'Slides from'), k.seg([['l', 'Left'], ['r', 'Right']], it.hinge || 'l', v => FM.set({ hinge: v }))), el('div', { class: 'note' }, 'A sliding door: a prop of its own with the game\'s sliding door type. Its origin is at the bottom of the edge it slides from (the orange line, seen from the front), and ox_doorlock slides it along its width as an Automatic door.'));
+            if (swing && !it.double) root.append(el('div', { class: 'row' }, el('label', null, 'Hinge'), k.seg([['l', 'Left'], ['r', 'Right']], it.hinge || 'l', v => FM.set({ hinge: v }))), el('div', { class: 'note' }, 'Seen from the front (the green arrow points to the front); the orange line is the hinge, it starts on the side opposite the knob. The door is a prop of its own that swings about the hinge, with a collision box the thickness of the leaf: your door script (ox_doorlock...) moves it. Its opening in the interior wall is centred on the door, with room each side for the leaf to turn, so it does not catch on the wall.'));
             if (door) {
                 root.append(chk('Also block the doorway with solid collision (it stays when a door script opens the door)', () => !!it.solid, v => FM.set({ solid: v })));
                 root.append(el('div', { class: 'note' }, 'The door prop has its own collision box. If the game gives you no collision there, turn this on: the doorway is blocked by the interior\'s own collision, which always works, but it stays blocked when the door is swung open.'));
             }
-            const inFrame = door ? findFrame(it) : null;
+            const inFrame = swing ? findFrame(it) : null;
             if (door && inFrame) {
                 root.append(el('div', { class: 'h' }, 'Frame'));
                 root.append(el('div', { class: 'row wrap' }, el('button', { class: 'btn sm primary', title: 'Size the door to the opening of the frame it stands in', onclick: () => FM.fitToFrame() }, 'Fit the door to its frame')));
@@ -597,6 +604,6 @@ window.MLO = window.MLO || {};
             el('button', { class: 'btn sm danger', style: { marginLeft: 'auto' }, onclick: (e) => { e.stopPropagation(); Model.edit(Q => { Q.import.fits = (Q.import.fits || []).filter(q => q.id !== f.id); }); if (FM.sel === f.id) FM.sel = null; M.UI.renderLeft(); } }, 'x'))); });
         if (!list.length) pl.append(el('div', { class: 'note' }, 'None yet.'));
         root.append(pl);
-        root.append(el('div', { class: 'note' }, 'The game ignores the scale of a prop, so a model you size here is written to the export at that size. Windows become part of the interior; a door is a prop with its origin at the hinge.'));
+        root.append(el('div', { class: 'note' }, 'The game ignores the scale of a prop, so a model you size here is written to the export at that size. Windows become part of the interior; a door is a prop with its origin at the hinge (a garage door at its middle, a sliding door at the bottom of its edge).'));
     };
 })(window.MLO);

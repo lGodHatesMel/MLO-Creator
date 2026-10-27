@@ -66,6 +66,14 @@ namespace MloCreator
             if (inv % 2 == 1) r[3 + dep] = -1;                // keep it a turn, not a mirror
             return r;
         }
+        // The turn for a garage or sliding door, which is often wider than it is tall (so "the longest side is the height" does not hold): its thinnest side is its depth, and its height stays
+        // the height unless the panel lies on its back or on its side. Null when it already is as it should be.
+        public static int[] AutoPanel(GlbModel m)
+        {
+            double[] e = new double[] { m.W, m.D, m.H }; int dep = 0; for (int a = 1; a < 3; a++) if (e[a] < e[dep]) dep = a;
+            if (dep == 1) return null; double second = 1e9; for (int a = 0; a < 3; a++) if (a != dep && e[a] < second) second = e[a]; if (e[dep] > second * 0.5) return null;          // (no clear panel)
+            return dep == 2 ? new int[] { 1, 0, 0, 0, 0, -1, 0, 1, 0 } : new int[] { 0, -1, 0, 1, 0, 0, 0, 0, 1 };          // (lying on its back: tilt it up; standing side on: spin it)
+        }
         // the clear opening of a frame: the front view (width x height) is drawn into a grid, and the empty cells that can be reached from the middle are the opening; it has to be shut in on
         // both sides and at the top (the bottom may be open: a door frame has no sill). A window or a door has nothing there.
         public void MeasureInner()
@@ -140,7 +148,10 @@ namespace MloCreator
     {
         public string FileName, Stem, Title = "", Author = "", License = "", Source = "";
         public List<GlbModel> Models = new List<GlbModel>(); public List<GlbMat> Mats = new List<GlbMat>(); public List<GlbTex> Texs = new List<GlbTex>();
-        public string Kind = "window";          // "frame" when the file is one frame, "door" when it is one door, else "window"
+        public string Kind = "window";          // "frame" when the file is one frame, "door" when it is one door, "garage" / "slide" for a garage or sliding door, else "window"
+        // How the file was cut into models: Units = the parts at the level where the file branches, SplitKeys = how many windows they make up when split by name, PackLike = the names look like a pack of
+        // windows (parts named <window>_frame, <window>_sash...: several parts to a window), Split = the file was cut into SplitKeys models (else all its parts are one model: a door made of many pieces).
+        public int Units, SplitKeys; public bool PackLike, Split;
 
         // the model turned by `r` (cached): a model is turned when it lies down or faces the wrong way, see GlbModel.Oriented
         readonly Dictionary<string, GlbModel> orientedCache = new Dictionary<string, GlbModel>();
@@ -154,6 +165,7 @@ namespace MloCreator
         {
             auto = false; int[] r = (setup != null && setup.Length == 9) ? setup : null;
             if (r == null && (kind == "door" || kind == "frame")) { r = GlbModel.AutoUpright(gm); auto = r != null; }
+            else if (r == null && (kind == "garage" || kind == "slide")) { r = GlbModel.AutoPanel(gm); auto = r != null; }
             GlbModel om = r == null ? gm : OrientedModel(gm, r);
             if (setup == null && kind == "frame" && om.UpsideDown)
             {
@@ -169,14 +181,17 @@ namespace MloCreator
         static readonly object gate = new object();
         const int MaxTex = 1024, MaxVerts = 60000;
 
-        public static GlbFile Load(string path)
+        // split: "split" cuts the file into one model per window system (a pack of windows), "one" makes all of it one model (a door made of many parts), anything else decides by the names (PackLike)
+        public static GlbFile Load(string path) { return Load(path, "auto"); }
+        public static GlbFile Load(string path, string split)
         {
             FileInfo fi = new FileInfo(path); if (!fi.Exists) throw new Exception("The model file " + Path.GetFileName(path) + " is not in the project.");
-            string key = path.ToLowerInvariant() + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks;
+            if (split != "one" && split != "split") split = "auto";
+            string key = path.ToLowerInvariant() + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks + "|" + split;
             lock (gate)
             {
                 GlbFile f; if (cache.TryGetValue(key, out f)) return f;
-                f = Parse(File.ReadAllBytes(path), Path.GetFileName(path));
+                f = Parse(File.ReadAllBytes(path), Path.GetFileName(path), split);
                 List<string> stale = new List<string>(); foreach (string k in cache.Keys) if (k.StartsWith(path.ToLowerInvariant() + "|")) stale.Add(k);
                 foreach (string k in stale) cache.Remove(k);
                 cache[key] = f; return f;
@@ -286,7 +301,7 @@ namespace MloCreator
         static string SafeId(string s) { string t = Regex.Replace((s ?? "").ToLowerInvariant(), "[^a-z0-9]+", "_").Trim('_'); return t.Length == 0 ? "model" : t; }
 
         // ---------- the file ----------
-        static GlbFile Parse(byte[] b, string fileName)
+        static GlbFile Parse(byte[] b, string fileName, string split)
         {
             if (b.Length < 20 || BitConverter.ToUInt32(b, 0) != 0x46546C67) throw new Exception(fileName + " is not a .glb file (binary glTF).");
             int pos = 12; string jsonText = null; byte[] bin = null;
@@ -386,6 +401,7 @@ namespace MloCreator
                 if (!byKey.ContainsKey(key)) { byKey[key] = new List<int>(); order.Add(key); }
                 byKey[key].Add(u);
             }
+            List<GlbModel> built = new List<GlbModel>();
             foreach (string key in order)
             {
                 GlbModel m = new GlbModel(); m.Key = key; m.Id = SafeId(f.Stem) + "/" + SafeId(key);
@@ -403,11 +419,47 @@ namespace MloCreator
                     }
                     m.Tris += g.Idx.Length / 3;
                 }
-                if (m.Geoms.Count > 0) { m.MeasureCore(); m.MeasureInner(); f.Models.Add(m); }
+                if (m.Geoms.Count > 0) built.Add(m);
             }
-            if (f.Models.Count == 0) throw new Exception(fileName + " has no triangles.");
-            bool one = f.Models.Count == 1; string nameText = f.Stem + " " + f.Title; f.Kind = one && Regex.IsMatch(nameText, "frame|casing|jamb", RegexOptions.IgnoreCase) ? "frame" : (one && Regex.IsMatch(nameText, "door", RegexOptions.IgnoreCase) ? "door" : "window");
+            if (built.Count == 0) throw new Exception(fileName + " has no triangles.");
+            // Is it a pack (several windows or doors, side by side) or one thing made of many parts (a garage door and its slats)? Parts named <window>_<part> are a pack; so are parts that stand apart
+            // from each other (the boxes of the parts do not touch: doors laid out in a row). The parts of one door touch each other.
+            f.Units = units.Count; f.SplitKeys = built.Count; f.PackLike = built.Count > 1 && (units.Count > built.Count || !Connected(built));
+            f.Split = split == "split" ? built.Count > 1 : (split == "one" ? false : f.PackLike);
+            if (f.Split || built.Count == 1) { foreach (GlbModel m in built) { m.MeasureCore(); m.MeasureInner(); f.Models.Add(m); } }
+            else
+            {
+                // all of it as one model
+                GlbModel one1 = new GlbModel(); one1.Key = f.Stem; one1.Id = SafeId(f.Stem) + "/" + SafeId(f.Stem); one1.Name = Pretty(f.Title.Length > 0 ? f.Title : f.Stem);
+                foreach (GlbModel m in built) { one1.Geoms.AddRange(m.Geoms); one1.Tris += m.Tris; for (int a = 0; a < 3; a++) { one1.Min[a] = Math.Min(one1.Min[a], m.Min[a]); one1.Max[a] = Math.Max(one1.Max[a], m.Max[a]); } }
+                one1.MeasureCore(); one1.MeasureInner(); f.Models.Add(one1);
+            }
+            bool one = f.Models.Count == 1; string nameText = f.Stem + " " + f.Title;
+            f.Kind = one && Regex.IsMatch(nameText, "frame|casing|jamb", RegexOptions.IgnoreCase) ? "frame"
+                : (one && Regex.IsMatch(nameText, "garage|roll[ _\\-]?up|rolling|roller|shutter|overhead|sectional", RegexOptions.IgnoreCase) ? "garage"
+                : (one && Regex.IsMatch(nameText, "sliding|slide|gate", RegexOptions.IgnoreCase) ? "slide"
+                : (Regex.IsMatch(nameText, "door", RegexOptions.IgnoreCase) && (one || !Regex.IsMatch(nameText, "window", RegexOptions.IgnoreCase)) ? "door" : "window")));          // (a pack of doors is a pack of doors)
             return f;
+        }
+
+        // do the boxes of the models form one connected piece (each touches another, give or take 2% of the whole)?
+        static bool Connected(List<GlbModel> ms)
+        {
+            double[] lo = new double[] { 1e18, 1e18, 1e18 }, hi = new double[] { -1e18, -1e18, -1e18 };
+            foreach (GlbModel m in ms) for (int a = 0; a < 3; a++) { lo[a] = Math.Min(lo[a], m.Min[a]); hi[a] = Math.Max(hi[a], m.Max[a]); }
+            double tol = 0.02 * Math.Max(hi[0] - lo[0], Math.Max(hi[1] - lo[1], hi[2] - lo[2]));
+            bool[] seen = new bool[ms.Count]; Stack<int> st = new Stack<int>(); st.Push(0); seen[0] = true; int n = 1;
+            while (st.Count > 0)
+            {
+                int c = st.Pop();
+                for (int j = 0; j < ms.Count; j++)
+                {
+                    if (seen[j]) continue; bool touch = true;
+                    for (int a = 0; a < 3 && touch; a++) if (ms[c].Min[a] > ms[j].Max[a] + tol || ms[j].Min[a] > ms[c].Max[a] + tol) touch = false;
+                    if (touch) { seen[j] = true; n++; st.Push(j); }
+                }
+            }
+            return n == ms.Count;
         }
 
         static bool HasMesh(List<object> nodes, int i)

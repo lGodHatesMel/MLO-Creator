@@ -145,7 +145,7 @@ namespace MloCreator
         public static Dictionary<string, object> GlbLibrary(string project, Dictionary<string, object> body)
         {
             Dictionary<string, object> r = new Dictionary<string, object>(); List<object> files = new List<object>(), texs = new List<object>(); string dir = FilesDir(project);
-            Dictionary<string, object> kinds = J.O(J.G(body, "kinds")), setups = J.O(J.G(body, "setups"));            // what the user chose: the kind of each file, the turn of each model
+            Dictionary<string, object> kinds = J.O(J.G(body, "kinds")), setups = J.O(J.G(body, "setups")), splits = J.O(J.G(body, "splits"));            // what the user chose: the kind of each file, the turn of each model, whether a file is cut into windows or is one model
             string only = J.S(J.G(body, "only"), "");                                                                    // one file only (after its kind or its turn was changed)
             // the project's own .glb files, then the ones that come with the program (unless the project has a file of that name)
             List<string> paths = new List<string>(); HashSet<string> seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -158,7 +158,7 @@ namespace MloCreator
                     Dictionary<string, object> e = new Dictionary<string, object>(); e["file"] = Path.GetFileName(f); e["builtin"] = !string.IsNullOrEmpty(ModelsDir) && Path.GetDirectoryName(f).Equals(ModelsDir, StringComparison.OrdinalIgnoreCase);
                     try
                     {
-                        GlbFile g = GlbFile.Load(f); e["kind"] = g.Kind; string fkind = J.S(J.G(kinds, Path.GetFileName(f)), g.Kind); e["title"] = g.Title; e["author"] = g.Author; e["license"] = g.License; e["source"] = g.Source;
+                        GlbFile g = GlbFile.Load(f, J.S(J.G(splits, Path.GetFileName(f)), "auto")); e["kind"] = g.Kind; e["units"] = g.Units; e["splitKeys"] = g.SplitKeys; e["split"] = g.Split; e["packLike"] = g.PackLike; string fkind = J.S(J.G(kinds, Path.GetFileName(f)), g.Kind); e["title"] = g.Title; e["author"] = g.Author; e["license"] = g.License; e["source"] = g.Source;
                         List<object> mats = new List<object>(); foreach (GlbMat m in g.Mats) { Dictionary<string, object> md = new Dictionary<string, object>(); md["name"] = m.Name; md["key"] = m.Key; md["color"] = new double[] { m.AvgR, m.AvgG, m.AvgB, m.A }; md["tex"] = m.Tex >= 0 ? g.Texs[m.Tex].Name : ""; md["glass"] = m.Glass; mats.Add(md); }
                         e["mats"] = mats;
                         foreach (GlbTex t in g.Texs) { Dictionary<string, object> td = new Dictionary<string, object>(); td["name"] = t.Name; td["w"] = t.Size; td["h"] = t.Size; td["rgba"] = Convert.ToBase64String(t.Rgba); texs.Add(td); }

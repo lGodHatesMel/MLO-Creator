@@ -185,7 +185,7 @@ window.MLO = window.MLO || {};
     // The camera follows by the same amount, so the model stays where it is on screen while the rooms rise or sink.
     IM.shiftLevel = function (dz, keepView) {
         dz = Math.round(dz * 1000) / 1000; if (!dz) return false;
-        const done = Model.edit(P => { const I = P.import; I.frame.z = Math.round((I.frame.z + dz) * 1000) / 1000; I.cutters.forEach(k => { k.zb = Math.round((k.zb - dz) * 1000) / 1000; }); });
+        const done = Model.edit(P => { const I = P.import; I.levelShift = Math.round(((I.levelShift || 0) + dz) * 1000) / 1000; I.frame.z = Math.round((I.frame.z + dz) * 1000) / 1000; I.cutters.forEach(k => { k.zb = Math.round((k.zb - dz) * 1000) / 1000; }); });
         if (done && !keepView && M.App.renderer) M.App.renderer.camera.target[2] += dz;
         return done;
     };

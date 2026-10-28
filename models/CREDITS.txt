@@ -1,7 +1,7 @@
 Models that come with MLO Creator
 =================================
 
-These three .glb files are listed in the Window / door models tool of every project ("built in"). They are other people's work, used under their licences.
+These .glb files are listed in the Window / door models tool of every project ("built in"). They are other people's work, used under their licences.
 When you place one in an interior, MLO Creator writes the credit and licence into the README of the exported resource.
 
 animated_window_systems.glb  -  "Animated Window Systems"
@@ -18,5 +18,27 @@ door_frame.glb  -  "Door Frame"
     by CrIsTaL (https://sketchfab.com/ArterLayll)
     Licence: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)  -  credit required
     Source: https://sketchfab.com/3d-models/door-frame-c91101537bef410f98c67895746ec407
+
+Cleaned copies (made with tools\clean_glb.py: extra parts removed, closed, resized, joined into one mesh with the origin at the bottom centre; the originals are other people's work):
+
+door_leaf_clean.glb, door_frame_clean.glb  -  "Door" (the leaf closed, and its frame as a separate model)
+    by Daniyal Malik (https://sketchfab.com/daniyalmalik)
+    Licence: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)  -  credit required
+    Source: https://sketchfab.com/3d-models/door-966bb4c016024f35a568eb0f2a0b5bd4
+
+door_white_wooden_leaf_clean.glb, door_white_wooden_frame_clean.glb  -  "Door white wooden - 4MB" (one French door leaf, and the frame of the double door)
+    by Mehdi Shahsavan (https://sketchfab.com/ahmagh2e)
+    Licence: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)  -  credit required
+    Source: https://sketchfab.com/3d-models/door-white-wooden-4mb-533db2542eac4bdc96aaccb39c626c1b
+
+corrupted_garage_door_clean.glb  -  "Corrupted Garage Door" (a garage door)
+    by Liam Moffitt (https://sketchfab.com/divadan)
+    Licence: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)  -  credit required
+    Source: https://sketchfab.com/3d-models/corrupted-garage-door-8c4e00adea764d5c8cf925d587dc52d1
+
+garage_door_527_clean.glb  -  "Garage door 527" (a garage door, its frame taken off)
+    by 1-3D.com (https://sketchfab.com/1-3D.com)
+    Licence: CC BY-SA 4.0 (http://creativecommons.org/licenses/by-sa/4.0/)  -  credit required, and a copy of it that you share has to stay under the same licence (share-alike)
+    Source: https://sketchfab.com/3d-models/garage-door-527-9de2c83164394275b81ab011b0b2a16a
 
 Check each licence before you use a resource made with them on a server that earns money. A project with a .glb of the same name in its own files uses that one instead.
